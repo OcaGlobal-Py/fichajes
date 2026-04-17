@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Control de Fichajes</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'DM Sans', system-ui, sans-serif; background: #F4F6F9; }
+  select { appearance: auto; }
+  input[type=time]::-webkit-calendar-picker-indicator { opacity: 0.4; cursor: pointer; }
+  .fich-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .fich-table th, .fich-table td { overflow: hidden; text-overflow: ellipsis; }
+  .fich-table tr:hover td { background: #f8fafc; }
+  input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; accent-color: #b91c1c; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+/* ─────────────────────────────────────────
+   CONFIGURACIÓN
+───────────────────────────────────────── */
+const GAS_URL_KEY = "fichajes_gas_url";
+
+// ── URL del servidor (preconfigurada — los empleados no la ven) ──
+const GAS_URL_HARDCODED = "https://script.google.com/macros/s/AKfycbzb8U6vjQXMGWAc1i39Ehk7FEfyrfQLNZVjL_EwmPHf2GMLrnFoWOnif2uzxCtKaBYQ/exec";
+
+/* ─────────────────────────────────────────
+   API
+───────────────────────────────────────── */
+const callApi = async (gasUrl, action, data = {}) => {
+  const res = await fetch(gasUrl, {
+    method: "POST",
+    body: JSON.stringify({ action, ...data }),
+  });
+  const json = await res.json();
+  if (json.error) throw new Error(json.error);
+  return json;
+};
+
+/* ─────────────────────────────────────────
+   FECHA / HORA
+───────────────────────────────────────── */
+const todayStr = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+};
+const nowTimeStr = (d = new Date()) =>
+  `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+const nowSecStr = (d = new Date()) =>
+  `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}:${String(d.getSeconds()).padStart(2,"0")}`;
+const fmtDate = (s) => {
+  if (!s) return "—";
+  const [y,m,d] = s.split("-");
+  return d && m && y ? `${d}/${m}/${y}` : s;
+};
+const fmtTime = (v) => {
+  if (!v) return "—";
+  if (typeof v === "string" && /^\d{2}:\d{2}/.test(v)) return v;
+  try { const d = new Date(v); if (!isNaN(d)) return nowSecStr(d); } catch {}
+  return String(v);
+};
+
+/* ─────────────────────────────────────────
+   EXPORTACIÓN COMPARTIDA
+───────────────────────────────────────── */
+const exportXLSX = (headers, rows, filename) => {
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  ws["!cols"] = headers.map((h, i) => ({ wch: Math.max(h.length, ...rows.map(r => String(r[i]||"").length)) + 2 }));
+  XLSX.utils.book_append_sheet(wb, ws, "Fichajes");
+  XLSX.writeFile(wb, filename + ".xlsx");
+};
+
+const exportPDF = (headers, rows, filename, titulo) => {
+  const doc = new jspdf.jsPDF({ orientation:"landscape", unit:"mm", format:"a4" });
+  doc.setFont("helvetica","bold"); doc.setFontSize(14);
+  doc.text(titulo, 14, 16);
+  doc.setFont("helvetica","normal"); doc.setFontSize(9);
+  doc.text(`Generado: ${new Date().toLocaleString("es-ES")}`, 14, 22);
+  doc.autoTable({ head:[headers], body:rows, startY:27, styles:{fontSize:8, cellPadding:3}, headStyles:{fillColor:[28,46,74], textColor:255, fontStyle:"bold"}, alternateRowStyles:{fillColor:[248,250,252]}, margin:{left:14, right:14} });
+  doc.save(filename + ".pdf");
+};
+
+/* ─────────────────────────────────────────
+   DESIGN TOKENS
+───────────────────────────────────────── */
+const C = {
+  navy:"#1C2E4A", blue:"#2563eb",
+  success:"#15803d", successBg:"#dcfce7", successBorder:"#86efac",
+  danger:"#b91c1c",  dangerBg:"#fee2e2",  dangerBorder:"#fca5a5",
+  warning:"#b45309", warningBg:"#fffbeb", warningBorder:"#fde68a",
+  bg:"#F4F6F9", card:"#ffffff", border:"#E2E8F0",
+  text:"#1e293b", muted:"#64748b", subtle:"#94a3b8",
+};
+const font = "'DM Sans', system-ui, sans-serif";
+const cardS = { background:C.card, borderRadius:16, border:`1px solid ${C.border}`, padding:"24px" };
+const inp = { width:"100%", padding:"10px 14px", borderRadius:10, border:`1.5px solid ${C.border}`, fontSize:15, outline:"none", boxSizing:"border-box", fontFamily:font, color:C.text, background:"#fff" };
+const lbl = { display:"block", fontWeight:600, color:C.muted, marginBottom:6, fontSize:12, textTransform:"uppercase", letterSpacing:"0.06em" };
+const btn = (bg, color="#fff", extra={}) => ({ background:bg, color, border:"none", borderRadius:10, padding:"10px 20px", fontWeight:700, cursor:"pointer", fontSize:14, fontFamily:font, transition:"opacity .15s", ...extra });
+const tabBtn = (active) => ({ flex:1, padding:"9px 6px", borderRadius:9, border:"none", cursor:"pointer", fontWeight:600, fontSize:12, fontFamily:font, background:active?"#fff":"transparent", color:active?C.navy:C.muted, boxShadow:active?"0 1px 6px rgba(0,0,0,0.08)":"none" });
+const badge = (tipo) => ({ padding:"3px 10px", borderRadius:6, fontSize:12, fontWeight:700, background:tipo==="entrada"?C.successBg:C.dangerBg, color:tipo==="entrada"?C.success:C.danger });
+const th = { background:"#f8fafc", padding:"10px 14px", textAlign:"left", fontWeight:700, color:C.muted, borderBottom:`2px solid ${C.border}`, fontSize:12, textTransform:"uppercase", letterSpacing:"0.05em", whiteSpace:"nowrap" };
+const td = { padding:"10px 14px", borderBottom:`1px solid #f1f5f9`, color:C.text, fontSize:13, whiteSpace:"nowrap" };
+
+/* ─────────────────────────────────────────
+   COMPONENTES BASE
+───────────────────────────────────────── */
+function Overlay({ children }) {
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(15,23,42,0.55)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:200, padding:20 }}>
+      {children}
+    </div>
+  );
+}
+
+function Spinner({ text="Cargando..." }) {
+  return (
+    <div style={{ textAlign:"center", padding:"48px 0", color:C.subtle, fontFamily:font }}>
+      <p style={{ margin:0, fontSize:14 }}>{text}</p>
+    </div>
+  );
+}
+
+function ErrBox({ msg }) {
+  return (
+    <div style={{ background:C.dangerBg, border:`1px solid ${C.dangerBorder}`, borderRadius:10, padding:"12px 16px", marginBottom:16 }}>
+      <p style={{ margin:0, color:C.danger, fontSize:13, fontWeight:600 }}>⚠ {msg}</p>
+    </div>
+  );
+}
+
+function SocBadge({ name }) {
+  if (!name) return null;
+  return <span style={{ background:"#eff6ff", color:"#1d4ed8", fontSize:11, fontWeight:700, padding:"2px 8px", borderRadius:5, marginLeft:6 }}>{name}</span>;
+}
+
+/* ─────────────────────────────────────────
+   PANTALLA: CONFIGURAR URL
+───────────────────────────────────────── */
+function UrlConfig({ onSave }) {
+  const [url, setUrl] = useState("");
+  const [testing, setTesting] = useState(false);
+  const [err, setErr] = useState("");
+
+  const test = async () => {
+    if (!url.trim()) { setErr("Pega la URL del Web App primero."); return; }
+    setTesting(true); setErr("");
+    try {
+      // POST en lugar de GET: evita el bloqueo CORS por redirección de Google
+      const res = await fetch(url.trim(), {
+        method: "POST",
+        body: JSON.stringify({ action: "ping" }),
+      });
+      const json = await res.json();
+      // El script devuelve error "Acción desconocida: ping" — eso también es válido
+      if (json.status === "ok" || (json.error && json.error.includes("ping"))) {
+        onSave(url.trim());
+      } else {
+        setErr("La URL respondió pero no parece ser el script correcto.");
+      }
+    } catch {
+      setErr("No se pudo conectar. Revisa que el Web App tenga acceso 'Cualquier persona' y que la URL termine en /exec.");
+    } finally { setTesting(false); }
+  };
+
+  return (
+    <div style={{ minHeight:"100vh", background:C.bg, display:"flex", alignItems:"center", justifyContent:"center", padding:20, fontFamily:font }}>
+      <div style={{ ...cardS, maxWidth:520, width:"100%" }}>
+        <div style={{ textAlign:"center", marginBottom:28 }}>
+          <div style={{ width:68, height:68, background:C.navy, borderRadius:22, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px", fontSize:30 }}>🔗</div>
+          <h1 style={{ margin:0, fontSize:22, color:C.navy, fontWeight:800 }}>Configurar conexión</h1>
+          <p style={{ margin:"8px 0 0", color:C.muted, fontSize:14 }}>Conecta la app con tu Google Sheet vía Apps Script</p>
+        </div>
+
+        <div style={{ background:"#f0f9ff", borderRadius:12, padding:"14px 18px", marginBottom:22, borderLeft:`4px solid ${C.blue}` }}>
+          <p style={{ margin:"0 0 8px", fontWeight:700, fontSize:13, color:C.navy }}>Checklist de implementación en Apps Script:</p>
+          <ul style={{ margin:0, paddingLeft:18, color:C.muted, fontSize:13, lineHeight:2.2 }}>
+            <li>Extensiones → <strong>Apps Script</strong> → pega el script</li>
+            <li>Implementar → <strong>Nueva implementación</strong> (no "Gestionar")</li>
+            <li>Tipo: <strong>Aplicación web</strong></li>
+            <li>Ejecutar como: <strong>Yo</strong></li>
+            <li>Acceso: <strong>Cualquier persona</strong> (no "autenticada")</li>
+            <li>Copia la URL que termina en <code style={{ background:"#dbeafe", padding:"1px 6px", borderRadius:4 }}>/exec</code></li>
+          </ul>
+        </div>
+
+        <label style={lbl}>URL del Web App</label>
+        <input
+          style={{ ...inp, marginBottom:14, fontSize:13 }}
+          value={url}
+          onChange={e => { setUrl(e.target.value); setErr(""); }}
+          placeholder="https://script.google.com/macros/s/.../exec"
+          onKeyDown={e => e.key === "Enter" && test()}
+        />
+        {err && <ErrBox msg={err} />}
+        <button
+          style={btn(C.blue, "#fff", { width:"100%", padding:"14px", fontSize:15, opacity:testing?0.7:1 })}
+          onClick={test} disabled={testing}>
+          {testing ? "Verificando conexión..." : "Conectar y continuar →"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────
+   PANTALLA: LOGIN
+───────────────────────────────────────── */
+function Login({ gasUrl, onLogin }) {
+  const [tab, setTab] = useState("employee");
+  const [dni, setDni] = useState("");
+  const [pass, setPass] = useState("");
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [showP, setShowP] = useState(false);
+
+  const reset = (t) => { setTab(t); setErr(""); setDni(""); setPass(""); setShowP(false); };
+
+  const loginEmp = async () => {
+    if (!dni.trim()) { setErr("Introduce tu DNI o NIE."); return; }
+    setLoading(true); setErr("");
+    try {
+      const res = await callApi(gasUrl, "loginEmployee", { dni: dni.trim().toUpperCase() });
+      onLogin(res.employee, "employee");
+    } catch(e) { setErr(e.message); }
+    finally { setLoading(false); }
+  };
+
+  const loginRole = async (role) => {
+    if (!pass) { setErr("Introduce la contraseña."); return; }
+    setLoading(true); setErr("");
+    try {
+      await callApi(gasUrl, "loginRole", { role, pass });
+      onLogin(null, role, pass);
+    } catch(e) { setErr(e.message); }
+    finally { setLoading(false); }
+  };
+
+  const TABS = [
+    { id:"employee", icon:"👤", label:"Empleado" },
+    { id:"admin",    icon:"⚙️", label:"Admin"    },
+    { id:"auditor",  icon:"🔍", label:"Auditor"  },
+  ];
+
+  return (
+    <div style={{ minHeight:"100vh", background:C.bg, display:"flex", alignItems:"center", justifyContent:"center", padding:20, fontFamily:font }}>
+      <div style={{ ...cardS, maxWidth:420, width:"100%" }}>
+        <div style={{ textAlign:"center", marginBottom:28 }}>
+          <div style={{ width:68, height:68, background:C.navy, borderRadius:22, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px", fontSize:30 }}>🏢</div>
+          <h1 style={{ margin:0, fontSize:22, color:C.navy, fontWeight:800 }}>Control de Fichajes</h1>
+          <p style={{ margin:"6px 0 0", color:C.muted, fontSize:13 }}>Sistema de registro de jornada laboral</p>
+        </div>
+
+        <div style={{ display:"flex", gap:4, background:"#f1f5f9", borderRadius:12, padding:4, marginBottom:26 }}>
+          {TABS.map(t => <button key={t.id} onClick={() => reset(t.id)} style={tabBtn(tab === t.id)}>{t.icon} {t.label}</button>)}
+        </div>
+
+        {tab === "employee" && (
+          <div>
+            <label style={lbl}>DNI / NIE</label>
+            <input
+              style={{ ...inp, fontSize:22, textAlign:"center", letterSpacing:4, fontWeight:800, textTransform:"uppercase" }}
+              value={dni} onChange={e => { setDni(e.target.value); setErr(""); }}
+              placeholder="12345678A" onKeyDown={e => e.key === "Enter" && loginEmp()} autoFocus
+            />
+            {err && <p style={{ color:C.danger, fontSize:13, margin:"10px 0 0" }}>{err}</p>}
+            <button
+              style={btn(C.navy, "#fff", { width:"100%", padding:"14px", fontSize:16, marginTop:18, borderRadius:12, opacity:loading?0.7:1 })}
+              onClick={loginEmp} disabled={loading}>
+              {loading ? "Verificando..." : "Acceder"}
+            </button>
+          </div>
+        )}
+
+        {(tab === "admin" || tab === "auditor") && (
+          <div>
+            <label style={lbl}>Contraseña de {tab === "admin" ? "Administrador" : "Auditor"}</label>
+            <div style={{ position:"relative" }}>
+              <input
+                type={showP ? "text" : "password"}
+                style={{ ...inp, paddingRight:60 }}
+                value={pass} onChange={e => { setPass(e.target.value); setErr(""); }}
+                placeholder="Introduce la contraseña"
+                onKeyDown={e => e.key === "Enter" && loginRole(tab)} autoFocus
+              />
+              <button onClick={() => setShowP(!showP)}
+                style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:C.subtle, fontSize:12, fontFamily:font }}>
+                {showP ? "Ocultar" : "Ver"}
+              </button>
+            </div>
+            {err && <p style={{ color:C.danger, fontSize:13, margin:"10px 0 0" }}>{err}</p>}
+            <button
+              style={btn(tab === "admin" ? C.navy : C.warning, "#fff", { width:"100%", padding:"14px", fontSize:15, marginTop:18, borderRadius:12, opacity:loading?0.7:1 })}
+              onClick={() => loginRole(tab)} disabled={loading}>
+              {loading ? "Verificando..." : `Acceder como ${tab === "admin" ? "Administrador" : "Auditor"}`}
+            </button>
+          </div>
+        )}
+
+        <button
+          onClick={() => { localStorage.removeItem(GAS_URL_KEY); location.reload(); }}
+          style={{ display:"block", margin:"18px auto 0", background:"none", border:"none", color:C.subtle, fontSize:12, cursor:"pointer", fontFamily:font, textDecoration:"underline" }}>
+          Cambiar URL del servidor
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────
+   PANTALLA: EMPLEADO
+───────────────────────────────────────── */
+function EmployeePanel({ gasUrl, user, now, logout }) {
+  const [todayFichs, setTodayFichs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState(null);
+  const [timeInput, setTimeInput] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState("");
+  const [err, setErr] = useState("");
+
+  const fetchFichs = async () => {
+    setLoading(true);
+    try {
+      const res = await callApi(gasUrl, "getMyFichajes", { dni:user.dni, fecha:todayStr() });
+      setTodayFichs(res.fichajes || []);
+    } catch(e) { setErr(e.message); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { fetchFichs(); }, []);
+
+  // El siguiente tipo se determina por el ÚLTIMO fichaje del día
+  const lastFich = todayFichs.length > 0 ? todayFichs[todayFichs.length - 1] : null;
+  const nextTipo = !lastFich || lastFich.tipo === "salida" ? "entrada" : "salida";
+
+  // Agrupar los fichajes del día en pares entrada/salida para mostrarlos
+  const pares = [];
+  let parActual = null;
+  for (const f of todayFichs) {
+    if (f.tipo === "entrada") {
+      parActual = { entrada: f, salida: null };
+      pares.push(parActual);
+    } else if (f.tipo === "salida" && parActual) {
+      parActual.salida = f;
+      parActual = null;
+    }
+  }
+
+  const onFichar = () => {
+    const r = new Date();
+    setTimeInput(nowTimeStr(r));
+    setModal({ tipo: nextTipo, horaReal: r.toISOString() });
+    setErr("");
+  };
+
+  const confirm = async () => {
+    const [h,m] = timeInput.split(":").map(Number);
+    setSaving(true); setErr("");
+    try {
+      await callApi(gasUrl, "fichar", {
+        sociedad: user.sociedad, nombre: user.nombre, dni: user.dni,
+        tipo: modal.tipo, fecha: todayStr(),
+        horaDeclarada: `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:00`,
+        horaReal: nowSecStr(new Date(modal.horaReal)),
+        timestamp: modal.horaReal,
+      });
+      await fetchFichs();
+      setModal(null);
+      setToast(`${modal.tipo === "entrada" ? "Entrada" : "Salida"} registrada a las ${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`);
+      setTimeout(() => setToast(""), 4500);
+    } catch(e) { setErr(e.message); }
+    finally { setSaving(false); }
+  };
+
+  const clock = now.toLocaleTimeString("es-ES", { hour:"2-digit", minute:"2-digit", second:"2-digit" });
+  const dateLabel = now.toLocaleDateString("es-ES", { weekday:"long", day:"numeric", month:"long", year:"numeric" });
+  const btnBg = nextTipo === "entrada" ? C.success : C.danger;
+  const btnLabel = nextTipo === "entrada" ? "⬆  FICHAR ENTRADA" : "⬇  FICHAR SALIDA";
+
+  return (
+    <div style={{ minHeight:"100vh", background:C.bg, padding:"20px 16px", fontFamily:font }}>
+      <div style={{ maxWidth:480, margin:"0 auto" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18 }}>
+          <span style={{ fontWeight:800, color:C.navy, fontSize:15 }}>🏢 Fichajes</span>
+          <button onClick={logout} style={btn("#e2e8f0", C.muted, { padding:"8px 16px", fontSize:13 })}>Cerrar sesión</button>
+        </div>
+
+        <div style={{ ...cardS, textAlign:"center", marginBottom:14 }}>
+          <div style={{ width:56, height:56, background:"#dbeafe", borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 10px", fontSize:22 }}>👤</div>
+          <h2 style={{ margin:0, fontSize:20, color:C.navy, fontWeight:800 }}>{user.nombre}</h2>
+          <p style={{ margin:"4px 0 2px", color:C.muted, fontSize:13 }}>DNI/NIE: <strong style={{ color:C.text }}>{user.dni}</strong></p>
+          {user.sociedad && <p style={{ margin:"4px 0 0", color:C.muted, fontSize:12 }}>Sociedad: <SocBadge name={user.sociedad} /></p>}
+        </div>
+
+        <div style={{ ...cardS, textAlign:"center", marginBottom:14, background:C.navy, border:"none" }}>
+          <p style={{ margin:"0 0 4px", color:"rgba(255,255,255,0.55)", fontSize:12, textTransform:"capitalize" }}>{dateLabel}</p>
+          <p style={{ margin:0, fontSize:50, fontWeight:800, color:"#fff", fontVariantNumeric:"tabular-nums", letterSpacing:"-2px" }}>{clock}</p>
+        </div>
+
+        <div style={{ ...cardS, marginBottom:18 }}>
+          <p style={{ margin:"0 0 12px", fontWeight:700, fontSize:12, color:C.muted, textTransform:"uppercase", letterSpacing:"0.07em" }}>
+            Registro de hoy — {fmtDate(todayStr())}
+          </p>
+          {loading ? <Spinner text="Cargando registro..." /> : pares.length === 0 ? (
+            <p style={{ margin:0, color:C.subtle, fontSize:13, textAlign:"center", padding:"12px 0" }}>Sin fichajes registrados hoy</p>
+          ) : (
+            <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+              {pares.map((par, i) => (
+                <div key={i} style={{ display:"flex", gap:10, alignItems:"stretch" }}>
+                  <div style={{ flex:1, background:C.successBg, borderRadius:10, padding:"10px 14px", border:`1.5px solid ${C.successBorder}` }}>
+                    <p style={{ margin:0, fontSize:10, fontWeight:700, color:C.success, letterSpacing:"0.07em" }}>ENTRADA {pares.length > 1 ? i+1 : ""}</p>
+                    <p style={{ margin:"4px 0 0", fontWeight:800, color:C.success, fontSize:18 }}>{fmtTime(par.entrada.horaDeclarada)}</p>
+                  </div>
+                  <div style={{ flex:1, background:par.salida ? C.dangerBg : "#f8fafc", borderRadius:10, padding:"10px 14px", border:`1.5px solid ${par.salida ? C.dangerBorder : C.border}` }}>
+                    <p style={{ margin:0, fontSize:10, fontWeight:700, color:par.salida ? C.danger : C.subtle, letterSpacing:"0.07em" }}>SALIDA {pares.length > 1 ? i+1 : ""}</p>
+                    <p style={{ margin:"4px 0 0", fontWeight:800, color:par.salida ? C.danger : C.subtle, fontSize:18 }}>{par.salida ? fmtTime(par.salida.horaDeclarada) : "—"}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {err && <ErrBox msg={err} />}
+        {toast && (
+          <div style={{ background:C.successBg, border:`1.5px solid ${C.successBorder}`, borderRadius:12, padding:"14px 18px", marginBottom:16, textAlign:"center" }}>
+            <p style={{ margin:0, color:C.success, fontWeight:700, fontSize:14 }}>✓ {toast}</p>
+          </div>
+        )}
+
+        <button
+          style={{ ...btn(btnBg, "#fff", { width:"100%", padding:"22px", fontSize:19, borderRadius:16, fontWeight:800 }), opacity:loading?0.65:1, cursor:loading?"default":"pointer" }}
+          disabled={loading}
+          onClick={onFichar}>
+          {btnLabel}
+        </button>
+      </div>
+
+      {modal && (
+        <Overlay>
+          <div style={{ ...cardS, maxWidth:380, width:"100%" }}>
+            <h3 style={{ margin:"0 0 6px", color:C.navy, fontSize:18, fontWeight:800 }}>
+              Confirmar {modal.tipo === "entrada" ? "Entrada ⬆" : "Salida ⬇"}
+            </h3>
+            <p style={{ color:C.muted, fontSize:13, margin:"0 0 22px" }}>
+              Puedes ajustar la hora si es necesario. La hora real queda registrada internamente.
+            </p>
+            <label style={lbl}>Hora de fichaje</label>
+            <input
+              type="time"
+              style={{ ...inp, fontSize:30, textAlign:"center", fontWeight:800, letterSpacing:2, padding:"16px" }}
+              value={timeInput} onChange={e => setTimeInput(e.target.value)}
+            />
+            {err && <ErrBox msg={err} />}
+            <div style={{ display:"flex", gap:10, marginTop:22 }}>
+              <button style={btn("#e2e8f0", C.text, { flex:1, padding:"12px" })} onClick={() => setModal(null)}>Cancelar</button>
+              <button
+                style={btn(modal.tipo === "entrada" ? C.success : C.danger, "#fff", { flex:2, padding:"12px", fontSize:15, opacity:saving?0.7:1 })}
+                onClick={confirm} disabled={saving}>
+                {saving ? "Guardando..." : `Confirmar ${modal.tipo === "entrada" ? "Entrada" : "Salida"}`}
+              </button>
+            </div>
+          </div>
+        </Overlay>
+      )}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────
+   PANTALLA: ADMINISTRADOR
+───────────────────────────────────────── */
+function AdminPanel({ gasUrl, sessionPass, logout, now }) {
+  const [tab, setTab] = useState("employees");
+  const [employees, setEmployees] = useState([]);
+  const [fichajes, setFichajes] = useState([]);
+  const [sociedades, setSociedades] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+  const [empModal, setEmpModal] = useState(null);
+  const [empForm, setEmpForm] = useState({ sociedad:"", nombre:"", dni:"", activo:"Sí" });
+  const [empErr, setEmpErr] = useState("");
+  const [empSaving, setEmpSaving] = useState(false);
+  const [search, setSearch] = useState("");
+  const [socFilter, setSocFilter] = useState("all");
+  const [selectedFichs, setSelectedFichs] = useState(new Set());
+  const [deletingMulti, setDeletingMulti] = useState(false);
+  const [cfgForm, setCfgForm] = useState({ ap:"", ap2:"", up:"", up2:"" });
+  const [cfgErr, setCfgErr] = useState(""); const [cfgOk, setCfgOk] = useState(false);
+
+  const fetchAll = async () => {
+    setLoading(true); setErr("");
+    try {
+      const [eR, fR] = await Promise.all([
+        callApi(gasUrl, "getEmployees", { role:"admin", pass:sessionPass }),
+        callApi(gasUrl, "getFichajes",  { role:"admin", pass:sessionPass }),
+      ]);
+      const emps = eR.employees || [];
+      setEmployees(emps);
+      setFichajes(fR.fichajes || []);
+      setSociedades([...new Set(emps.map(e => e.sociedad).filter(Boolean))].sort());
+    } catch(e) { setErr(e.message); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { fetchAll(); }, []);
+
+  const openAdd  = () => { setEmpForm({ sociedad:sociedades[0]||"", nombre:"", dni:"", activo:"Sí" }); setEmpErr(""); setEmpModal({ mode:"add" }); };
+  const openEdit = (emp) => { setEmpForm({ sociedad:emp.sociedad, nombre:emp.nombre, dni:emp.dni, activo:emp.activo }); setEmpErr(""); setEmpModal({ mode:"edit", id:emp.id }); };
+
+  const saveEmp = async () => {
+    if (!empForm.sociedad.trim()) { setEmpErr("Sociedad obligatoria."); return; }
+    if (!empForm.nombre.trim())   { setEmpErr("Nombre obligatorio."); return; }
+    if (!empForm.dni.trim())      { setEmpErr("DNI/NIE obligatorio."); return; }
+    setEmpSaving(true); setEmpErr("");
+    try {
+      await callApi(gasUrl, "saveEmployee", { role:"admin", pass:sessionPass, mode:empModal.mode, id:empModal.id, ...empForm });
+      await fetchAll(); setEmpModal(null);
+    } catch(e) { setEmpErr(e.message); }
+    finally { setEmpSaving(false); }
+  };
+
+  const deleteEmp  = async (id) => { if (!confirm("¿Eliminar este empleado?")) return; try { await callApi(gasUrl, "deleteEmployee", { role:"admin", pass:sessionPass, id }); await fetchAll(); } catch(e) { setErr(e.message); } };
+  const deleteFich = async (id) => { if (!confirm("¿Eliminar este fichaje?")) return; try { await callApi(gasUrl, "deleteFichaje", { role:"admin", pass:sessionPass, id }); await fetchAll(); } catch(e) { setErr(e.message); } };
+
+  const deleteSelected = async () => {
+    if (selectedFichs.size === 0) return;
+    if (!confirm(`¿Eliminar ${selectedFichs.size} registro${selectedFichs.size > 1 ? "s" : ""}?`)) return;
+    setDeletingMulti(true);
+    try {
+      for (const id of selectedFichs) {
+        await callApi(gasUrl, "deleteFichaje", { role:"admin", pass:sessionPass, id });
+      }
+      setSelectedFichs(new Set());
+      await fetchAll();
+    } catch(e) { setErr(e.message); }
+    finally { setDeletingMulti(false); }
+  };
+
+  const toggleSelect = (id) => {
+    setSelectedFichs(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+  };
+  const toggleAll = () => {
+    setSelectedFichs(prev => prev.size === filteredFichs.length ? new Set() : new Set(filteredFichs.map(f => f.id)));
+  };
+
+  const buildRows = (fichs) => fichs.map(f => [f.sociedad, f.nombre, f.dni, fmtDate(f.fecha), f.tipo==="entrada"?"Entrada":"Salida", fmtTime(f.horaDeclarada), fmtTime(f.horaReal)]);
+  const HEADERS_ADMIN = ["Sociedad","Empleado","DNI/NIE","Fecha","Tipo","Hora declarada","Hora real (sistema)"];
+
+  const doExportXLSX = () => exportXLSX(HEADERS_ADMIN, buildRows(filteredFichs), `fichajes_admin_${todayStr()}`);
+  const doExportPDF  = () => exportPDF(HEADERS_ADMIN, buildRows(filteredFichs), `fichajes_admin_${todayStr()}`, "Registro de Fichajes — Administración");
+
+  const saveCfg = async () => {
+    const { ap, ap2, up, up2 } = cfgForm;
+    if (ap && ap.length < 6)  { setCfgErr("Mínimo 6 caracteres."); return; }
+    if (ap && ap !== ap2)     { setCfgErr("Las contraseñas del admin no coinciden."); return; }
+    if (up && up.length < 6)  { setCfgErr("Mínimo 6 caracteres."); return; }
+    if (up && up !== up2)     { setCfgErr("Las contraseñas del auditor no coinciden."); return; }
+    try {
+      await callApi(gasUrl, "updateConfig", { pass:sessionPass, ...(ap ? { adminPass:ap } : {}), ...(up ? { auditorPass:up } : {}) });
+      setCfgForm({ ap:"", ap2:"", up:"", up2:"" }); setCfgErr(""); setCfgOk(true); setTimeout(() => setCfgOk(false), 3000);
+    } catch(e) { setCfgErr(e.message); }
+  };
+
+  const filteredFichs = fichajes.filter(f => (!search || f.nombre.toLowerCase().includes(search.toLowerCase()) || f.dni.toLowerCase().includes(search.toLowerCase())) && (socFilter === "all" || f.sociedad === socFilter)).sort((a,b) => String(b.timestamp).localeCompare(String(a.timestamp)));
+  const filteredEmps  = [...employees].filter(e => socFilter === "all" || e.sociedad === socFilter).sort((a,b) => a.nombre.localeCompare(b.nombre));
+  const activoStyle   = (a) => ({ padding:"2px 10px", borderRadius:6, fontSize:12, fontWeight:700, background:String(a).toUpperCase().startsWith("S")?C.successBg:C.dangerBg, color:String(a).toUpperCase().startsWith("S")?C.success:C.danger });
+  const TABS = [{ id:"employees", label:"👥 Empleados" }, { id:"fichajes", label:"📋 Fichajes" }, { id:"config", label:"⚙️ Config" }];
+
+  return (
+    <div style={{ minHeight:"100vh", background:C.bg, padding:"20px 16px", fontFamily:font }}>
+      <div style={{ maxWidth:1020, margin:"0 auto" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
+          <div>
+            <h1 style={{ margin:0, color:C.navy, fontSize:20, fontWeight:800 }}>⚙️ Administrador</h1>
+            <p style={{ margin:"2px 0 0", color:C.muted, fontSize:12 }}>{now.toLocaleString("es-ES")}</p>
+          </div>
+          <div style={{ display:"flex", gap:8 }}>
+            <button onClick={fetchAll} style={btn("#e2e8f0", C.muted, { fontSize:13 })}>↻ Actualizar</button>
+            <button onClick={logout} style={btn("#e2e8f0", C.muted, { fontSize:13 })}>Cerrar sesión</button>
+          </div>
+        </div>
+
+        <div style={{ display:"flex", gap:4, background:"#e2e8f0", borderRadius:12, padding:4, marginBottom:16 }}>
+          {TABS.map(t => <button key={t.id} onClick={() => setTab(t.id)} style={tabBtn(tab === t.id)}>{t.label}</button>)}
+        </div>
+
+        {sociedades.length > 1 && (tab === "employees" || tab === "fichajes") && (
+          <div style={{ display:"flex", gap:8, marginBottom:14, flexWrap:"wrap" }}>
+            {["all",...sociedades].map(s => (
+              <button key={s} onClick={() => setSocFilter(s)} style={{ padding:"6px 14px", borderRadius:8, border:`1.5px solid ${socFilter===s?C.blue:C.border}`, background:socFilter===s?"#eff6ff":"#fff", color:socFilter===s?C.blue:C.muted, fontWeight:socFilter===s?700:500, fontSize:13, cursor:"pointer", fontFamily:font }}>
+                {s === "all" ? "Todas las sociedades" : s}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {err && <ErrBox msg={err} />}
+
+        {loading ? <Spinner text="Cargando datos desde Sheets..." /> : (<>
+
+          {tab === "employees" && (
+            <div style={cardS}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18 }}>
+                <h2 style={{ margin:0, fontSize:15, fontWeight:700, color:C.navy }}>Empleados ({filteredEmps.length})</h2>
+                <button style={btn(C.success, "#fff", { fontSize:13 })} onClick={openAdd}>+ Añadir empleado</button>
+              </div>
+              {filteredEmps.length === 0 ? <div style={{ textAlign:"center", padding:"40px 0", color:C.subtle }}>Sin empleados</div> : (
+                <div style={{ overflowX:"auto" }}>
+                  <table style={{ width:"100%", borderCollapse:"collapse" }}>
+                    <thead><tr><th style={th}>Sociedad</th><th style={th}>Apellidos, Nombre</th><th style={th}>DNI/NIE</th><th style={th}>Estado</th><th style={{ ...th, textAlign:"right" }}>Acciones</th></tr></thead>
+                    <tbody>
+                      {filteredEmps.map(e => (
+                        <tr key={e.id}>
+                          <td style={td}><SocBadge name={e.sociedad} /></td>
+                          <td style={td}><strong>{e.nombre}</strong></td>
+                          <td style={td}><code style={{ background:"#f1f5f9", padding:"3px 8px", borderRadius:5, fontWeight:700, fontSize:13 }}>{e.dni}</code></td>
+                          <td style={td}><span style={activoStyle(e.activo)}>{String(e.activo).toUpperCase().startsWith("S") ? "Activo" : "Inactivo"}</span></td>
+                          <td style={{ ...td, textAlign:"right" }}>
+                            <button style={btn(C.blue, "#fff", { fontSize:12, padding:"6px 14px", marginRight:8 })} onClick={() => openEdit(e)}>Editar</button>
+                            <button style={btn(C.danger, "#fff", { fontSize:12, padding:"6px 14px" })} onClick={() => deleteEmp(e.id)}>Eliminar</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {tab === "fichajes" && (
+            <div style={cardS}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16, flexWrap:"wrap", gap:8 }}>
+                <h2 style={{ margin:0, fontSize:15, fontWeight:700, color:C.navy }}>Fichajes ({filteredFichs.length})</h2>
+                <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+                  {selectedFichs.size > 0 && (
+                    <button style={btn(C.danger, "#fff", { fontSize:13, opacity:deletingMulti?0.7:1 })} onClick={deleteSelected} disabled={deletingMulti}>
+                      {deletingMulti ? "Eliminando..." : `🗑 Eliminar seleccionados (${selectedFichs.size})`}
+                    </button>
+                  )}
+                  <button style={btn("#e2e8f0", C.text, { fontSize:13 })} onClick={doExportXLSX}>📊 XLSX</button>
+                  <button style={btn("#e2e8f0", C.text, { fontSize:13 })} onClick={doExportPDF}>📄 PDF</button>
+                </div>
+              </div>
+              <input style={{ ...inp, marginBottom:14 }} value={search} onChange={e => { setSearch(e.target.value); setSelectedFichs(new Set()); }} placeholder="Buscar por nombre o DNI/NIE..." />
+              {filteredFichs.length === 0 ? <div style={{ textAlign:"center", padding:"40px 0", color:C.subtle }}>Sin registros</div> : (
+                <table className="fich-table">
+                  <colgroup>
+                    <col style={{ width:32 }} />
+                    <col style={{ width:"12%" }} />
+                    <col style={{ width:"22%" }} />
+                    <col style={{ width:"10%" }} />
+                    <col style={{ width:"9%" }} />
+                    <col style={{ width:"8%" }} />
+                    <col style={{ width:"9%" }} />
+                    <col style={{ width:"9%" }} />
+                    <col style={{ width:36 }} />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th style={{ ...th, padding:"10px 8px", textAlign:"center" }}>
+                        <input type="checkbox" checked={selectedFichs.size === filteredFichs.length && filteredFichs.length > 0} onChange={toggleAll} />
+                      </th>
+                      <th style={th}>Sociedad</th>
+                      <th style={th}>Empleado</th>
+                      <th style={th}>DNI/NIE</th>
+                      <th style={th}>Fecha</th>
+                      <th style={th}>Tipo</th>
+                      <th style={th}>Declarada</th>
+                      <th style={{ ...th, background:C.warningBg, color:C.warning }}>⚑ Real</th>
+                      <th style={th}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredFichs.map(f => {
+                      const sel = selectedFichs.has(f.id);
+                      const rowBg = sel ? "#fef2f2" : "transparent";
+                      return (
+                        <tr key={f.id} style={{ background:rowBg, cursor:"pointer" }} onClick={() => toggleSelect(f.id)}>
+                          <td style={{ ...td, textAlign:"center", padding:"8px", background:rowBg }}>
+                            <input type="checkbox" checked={sel} onChange={() => toggleSelect(f.id)} onClick={e => e.stopPropagation()} />
+                          </td>
+                          <td style={{ ...td, fontSize:11, whiteSpace:"normal", background:rowBg }}><SocBadge name={f.sociedad} /></td>
+                          <td style={{ ...td, whiteSpace:"normal", background:rowBg }}><strong style={{ fontSize:12 }}>{f.nombre}</strong></td>
+                          <td style={{ ...td, fontSize:11, background:rowBg }}><code style={{ background:"#f1f5f9", padding:"2px 5px", borderRadius:4, fontSize:11 }}>{f.dni}</code></td>
+                          <td style={{ ...td, fontSize:12, background:rowBg }}>{fmtDate(f.fecha)}</td>
+                          <td style={{ ...td, background:rowBg }}><span style={{ ...badge(f.tipo), fontSize:11, padding:"2px 7px" }}>{f.tipo==="entrada"?"↑ Ent.":"↓ Sal."}</span></td>
+                          <td style={{ ...td, fontSize:12, background:rowBg }}>{fmtTime(f.horaDeclarada)}</td>
+                          <td style={{ ...td, fontSize:12, background:sel?"#fef2f2":C.warningBg }}><strong style={{ color:C.warning }}>{fmtTime(f.horaReal)}</strong></td>
+                          <td style={{ ...td, textAlign:"center", padding:"8px", background:rowBg }}>
+                            <button style={btn(C.danger,"#fff",{fontSize:11,padding:"3px 8px"})} onClick={e=>{e.stopPropagation();deleteFich(f.id);}}>✕</button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {tab === "config" && (
+            <div style={cardS}>
+              <h2 style={{ margin:"0 0 6px", fontSize:15, fontWeight:700, color:C.navy }}>Cambiar contraseñas</h2>
+              <p style={{ color:C.muted, fontSize:13, margin:"0 0 22px" }}>Deja en blanco los campos que no quieras modificar.</p>
+              {[
+                { label:"⚙️ Administrador", fields:[{ k:"ap", ph:"Nueva contraseña" },{ k:"ap2", ph:"Confirmar" }] },
+                { label:"🔍 Auditor",        fields:[{ k:"up", ph:"Nueva contraseña" },{ k:"up2", ph:"Confirmar" }] },
+              ].map(s => (
+                <div key={s.label} style={{ background:"#f8fafc", borderRadius:12, padding:18, marginBottom:14 }}>
+                  <p style={{ margin:"0 0 14px", fontWeight:700, fontSize:13, color:C.text }}>{s.label}</p>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+                    {s.fields.map(({ k, ph }) => (
+                      <div key={k}>
+                        <label style={lbl}>{ph}</label>
+                        <input type="password" style={inp} value={cfgForm[k]} onChange={e => setCfgForm({ ...cfgForm, [k]:e.target.value })} placeholder={ph} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {cfgErr && <p style={{ color:C.danger, fontSize:13, marginBottom:14 }}>{cfgErr}</p>}
+              {cfgOk  && <p style={{ color:C.success, fontSize:13, marginBottom:14 }}>✓ Contraseñas actualizadas en Sheets.</p>}
+              <button style={btn(C.blue, "#fff", { padding:"11px 24px", fontSize:14 })} onClick={saveCfg}>Guardar cambios</button>
+            </div>
+          )}
+
+        </>)}
+      </div>
+
+      {empModal && (
+        <Overlay>
+          <div style={{ ...cardS, maxWidth:420, width:"100%" }}>
+            <h3 style={{ margin:"0 0 22px", color:C.navy, fontSize:17, fontWeight:800 }}>
+              {empModal.mode === "add" ? "Nuevo empleado" : "Editar empleado"}
+            </h3>
+            <div style={{ marginBottom:14 }}>
+              <label style={lbl}>Sociedad</label>
+              <input style={inp} value={empForm.sociedad} onChange={e => setEmpForm({ ...empForm, sociedad:e.target.value })} placeholder="Nombre de la sociedad" list="soc-list" autoFocus />
+              <datalist id="soc-list">{sociedades.map(s => <option key={s} value={s} />)}</datalist>
+            </div>
+            <div style={{ marginBottom:14 }}>
+              <label style={lbl}>Apellidos, Nombre</label>
+              <input style={inp} value={empForm.nombre} onChange={e => setEmpForm({ ...empForm, nombre:e.target.value })} placeholder="Apellido Apellido, Nombre" />
+            </div>
+            <div style={{ marginBottom:14 }}>
+              <label style={lbl}>DNI / NIE</label>
+              <input style={{ ...inp, textTransform:"uppercase", letterSpacing:1 }} value={empForm.dni} onChange={e => setEmpForm({ ...empForm, dni:e.target.value })} placeholder="12345678A" />
+            </div>
+            <div style={{ marginBottom:18 }}>
+              <label style={lbl}>Estado</label>
+              <select style={inp} value={empForm.activo} onChange={e => setEmpForm({ ...empForm, activo:e.target.value })}>
+                <option value="Sí">Activo (tiene acceso)</option>
+                <option value="No">Inactivo (sin acceso)</option>
+              </select>
+            </div>
+            {empErr && <p style={{ color:C.danger, fontSize:13, marginBottom:14 }}>{empErr}</p>}
+            <div style={{ display:"flex", gap:10 }}>
+              <button style={btn("#e2e8f0", C.text, { flex:1, padding:"12px" })} onClick={() => setEmpModal(null)}>Cancelar</button>
+              <button style={btn(C.success, "#fff", { flex:2, padding:"12px", fontSize:14, opacity:empSaving?0.7:1 })} onClick={saveEmp} disabled={empSaving}>
+                {empSaving ? "Guardando..." : empModal.mode === "add" ? "Añadir empleado" : "Guardar cambios"}
+              </button>
+            </div>
+          </div>
+        </Overlay>
+      )}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────
+   PANTALLA: AUDITOR
+───────────────────────────────────────── */
+function AuditorPanel({ gasUrl, sessionPass, logout, now }) {
+  const [fichajes, setFichajes] = useState([]);
+  const [sociedades, setSociedades] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+  const [search, setSearch] = useState("");
+  const [dateFilter, setDateFilter] = useState("");
+  const [tipoFilter, setTipoFilter] = useState("all");
+  const [socFilter, setSocFilter] = useState("all");
+
+  const fetchFichs = async () => {
+    setLoading(true); setErr("");
+    try {
+      const res = await callApi(gasUrl, "getFichajes", { role:"auditor", pass:sessionPass });
+      const f = res.fichajes || [];
+      setFichajes(f);
+      setSociedades([...new Set(f.map(x => x.sociedad).filter(Boolean))].sort());
+    } catch(e) { setErr(e.message); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { fetchFichs(); }, []);
+
+  const toSec = (v) => (v||"").split(":").reduce((a,x,i) => a + Number(x)*[3600,60,1][i], 0);
+
+  const filtered = fichajes
+    .filter(f => (!search || f.nombre.toLowerCase().includes(search.toLowerCase()) || f.dni.toLowerCase().includes(search.toLowerCase())) && (!dateFilter || f.fecha === dateFilter) && (tipoFilter === "all" || f.tipo === tipoFilter) && (socFilter === "all" || f.sociedad === socFilter))
+    .sort((a,b) => String(b.timestamp).localeCompare(String(a.timestamp)));
+
+  const disc = filtered.filter(f => Math.abs(toSec(f.horaDeclarada) - toSec(f.horaReal)) > 300).length;
+
+  const HEADERS_AUD = ["Sociedad","Empleado","DNI/NIE","Fecha","Tipo","Hora declarada","Hora real (sistema)","Diferencia (min)"];
+  const buildRowsAud = () => filtered.map(f => {
+    const diff = Math.round((toSec(f.horaDeclarada) - toSec(f.horaReal)) / 60);
+    return [f.sociedad, f.nombre, f.dni, fmtDate(f.fecha), f.tipo==="entrada"?"Entrada":"Salida", fmtTime(f.horaDeclarada), fmtTime(f.horaReal), diff===0?"0":`${diff>0?"+":""}${diff} min`];
+  });
+
+  const doExportXLSX = () => exportXLSX(HEADERS_AUD, buildRowsAud(), `auditoria_${todayStr()}`);
+  const doExportPDF  = () => exportPDF(HEADERS_AUD, buildRowsAud(), `auditoria_${todayStr()}`, "Registro de Auditoría — Fichajes");
+
+  const STATS = [
+    { icon:"📋", val:filtered.length,                                  label:"Registros totales",    color:C.blue    },
+    { icon:"⬆",  val:filtered.filter(f=>f.tipo==="entrada").length,    label:"Entradas",             color:C.success },
+    { icon:"⬇",  val:filtered.filter(f=>f.tipo==="salida").length,     label:"Salidas",              color:C.danger  },
+    { icon:"⚠",  val:disc,                                              label:"Discrepancias >5 min", color:C.warning },
+  ];
+
+  return (
+    <div style={{ minHeight:"100vh", background:C.bg, padding:"20px 16px", fontFamily:font }}>
+      <div style={{ maxWidth:1100, margin:"0 auto" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
+          <div>
+            <h1 style={{ margin:0, color:C.navy, fontSize:20, fontWeight:800 }}>🔍 Panel de Auditoría</h1>
+            <p style={{ margin:"2px 0 0", color:C.muted, fontSize:12 }}>{now.toLocaleString("es-ES")}</p>
+          </div>
+          <div style={{ display:"flex", gap:8 }}>
+            <button onClick={fetchFichs} style={btn("#e2e8f0", C.muted, { fontSize:13 })}>↻ Actualizar</button>
+            <button onClick={doExportXLSX} style={btn("#e2e8f0", C.text, { fontSize:13 })}>📊 XLSX</button>
+            <button onClick={doExportPDF}  style={btn("#e2e8f0", C.text, { fontSize:13 })}>📄 PDF</button>
+            <button onClick={logout} style={btn("#e2e8f0", C.muted, { fontSize:13 })}>Cerrar sesión</button>
+          </div>
+        </div>
+
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,minmax(0,1fr))", gap:12, marginBottom:18 }}>
+          {STATS.map(s => (
+            <div key={s.label} style={{ ...cardS, textAlign:"center", padding:"18px 12px" }}>
+              <div style={{ fontSize:18, marginBottom:6 }}>{s.icon}</div>
+              <div style={{ fontSize:28, fontWeight:800, color:s.color }}>{s.val}</div>
+              <div style={{ fontSize:11, color:C.muted, marginTop:4, lineHeight:1.3 }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {sociedades.length > 1 && (
+          <div style={{ display:"flex", gap:8, marginBottom:14, flexWrap:"wrap" }}>
+            {["all",...sociedades].map(s => (
+              <button key={s} onClick={() => setSocFilter(s)} style={{ padding:"6px 14px", borderRadius:8, border:`1.5px solid ${socFilter===s?C.blue:C.border}`, background:socFilter===s?"#eff6ff":"#fff", color:socFilter===s?C.blue:C.muted, fontWeight:socFilter===s?700:500, fontSize:13, cursor:"pointer", fontFamily:font }}>
+                {s === "all" ? "Todas las sociedades" : s}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div style={{ ...cardS, marginBottom:18 }}>
+          <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr 1fr", gap:12 }}>
+            <div><label style={lbl}>Buscar empleado</label><input style={inp} value={search} onChange={e => setSearch(e.target.value)} placeholder="Nombre o DNI/NIE..." /></div>
+            <div><label style={lbl}>Fecha</label><input type="date" style={inp} value={dateFilter} onChange={e => setDateFilter(e.target.value)} /></div>
+            <div><label style={lbl}>Tipo</label><select style={inp} value={tipoFilter} onChange={e => setTipoFilter(e.target.value)}><option value="all">Todos</option><option value="entrada">Entrada</option><option value="salida">Salida</option></select></div>
+          </div>
+          {(search || dateFilter || tipoFilter !== "all" || socFilter !== "all") && (
+            <button style={btn("#f1f5f9", C.muted, { marginTop:12, fontSize:12, padding:"6px 14px" })} onClick={() => { setSearch(""); setDateFilter(""); setTipoFilter("all"); setSocFilter("all"); }}>✕ Limpiar filtros</button>
+          )}
+        </div>
+
+        {err && <ErrBox msg={err} />}
+
+        <div style={cardS}>
+          {loading ? <Spinner text="Cargando registros desde Sheets..." /> : filtered.length === 0 ? (
+            <div style={{ textAlign:"center", padding:"50px 0", color:C.subtle }}>Sin registros para los filtros aplicados</div>
+          ) : (
+            <table className="fich-table">
+              <colgroup>
+                <col style={{ width:"11%" }} />
+                <col style={{ width:"22%" }} />
+                <col style={{ width:"10%" }} />
+                <col style={{ width:"9%" }} />
+                <col style={{ width:"8%" }} />
+                <col style={{ width:"10%" }} />
+                <col style={{ width:"10%" }} />
+                <col style={{ width:"10%" }} />
+              </colgroup>
+              <thead><tr>
+                <th style={th}>Sociedad</th>
+                <th style={th}>Empleado</th>
+                <th style={th}>DNI/NIE</th>
+                <th style={th}>Fecha</th>
+                <th style={th}>Tipo</th>
+                <th style={th}>Declarada</th>
+                <th style={{ ...th, background:C.warningBg, color:C.warning }}>⚑ Real</th>
+                <th style={{ ...th, background:C.warningBg, color:C.warning }}>⚑ Diferencia</th>
+              </tr></thead>
+              <tbody>
+                {filtered.map(f => {
+                  const diff = Math.round((toSec(f.horaDeclarada) - toSec(f.horaReal)) / 60);
+                  const abs = Math.abs(diff);
+                  const dc = abs > 10 ? C.danger : abs > 5 ? C.warning : C.success;
+                  return (
+                    <tr key={f.id}>
+                      <td style={{ ...td, fontSize:11 }}><SocBadge name={f.sociedad} /></td>
+                      <td style={{ ...td, whiteSpace:"normal" }}><strong style={{ fontSize:12 }}>{f.nombre}</strong></td>
+                      <td style={{ ...td, fontSize:11 }}><code style={{ background:"#f1f5f9", padding:"2px 5px", borderRadius:4, fontSize:11 }}>{f.dni}</code></td>
+                      <td style={{ ...td, fontSize:12 }}>{fmtDate(f.fecha)}</td>
+                      <td style={td}><span style={{ ...badge(f.tipo), fontSize:11, padding:"2px 7px" }}>{f.tipo==="entrada"?"↑ Ent.":"↓ Sal."}</span></td>
+                      <td style={{ ...td, fontSize:12 }}>{fmtTime(f.horaDeclarada)}</td>
+                      <td style={{ ...td, fontSize:12, background:C.warningBg }}><strong style={{ color:C.warning }}>{fmtTime(f.horaReal)}</strong></td>
+                      <td style={{ ...td, background:C.warningBg }}>
+                        <span style={{ fontWeight:700, fontSize:12, color:dc }}>
+                          {diff === 0 ? "Sin dif." : `${diff > 0 ? "+" : ""}${diff} min`}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────
+   APP PRINCIPAL
+───────────────────────────────────────── */
+function App() {
+  const [gasUrl, setGasUrl] = useState(null);
+  const [screen, setScreen] = useState("loading");
+  const [currentUser, setCurrentUser] = useState(null);
+  const [sessionPass, setSessionPass] = useState(null);
+  const [now, setNow] = useState(new Date());
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    if (GAS_URL_HARDCODED) {
+      setGasUrl(GAS_URL_HARDCODED);
+      setScreen("login");
+    } else {
+      const url = localStorage.getItem(GAS_URL_KEY);
+      if (url) { setGasUrl(url); setScreen("login"); }
+      else { setScreen("urlconfig"); }
+    }
+  }, []);
+
+  const handleUrlSave = (url) => { localStorage.setItem(GAS_URL_KEY, url); setGasUrl(url); setScreen("login"); };
+  const login = (user, role, pass = null) => { setCurrentUser(user); setSessionPass(pass); setScreen(role); };
+  const logout = () => { setCurrentUser(null); setSessionPass(null); setScreen("login"); };
+
+  const shared = { gasUrl, now, logout };
+
+  if (screen === "loading")   return <div style={{ minHeight:"100vh", background:C.bg, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:font }}><p style={{ color:C.subtle }}>Cargando...</p></div>;
+  if (screen === "urlconfig") return <UrlConfig onSave={handleUrlSave} />;
+  if (screen === "login")     return <Login gasUrl={gasUrl} onLogin={login} />;
+  if (screen === "employee")  return <EmployeePanel {...shared} user={currentUser} />;
+  if (screen === "admin")     return <AdminPanel {...shared} sessionPass={sessionPass} />;
+  if (screen === "auditor")   return <AuditorPanel {...shared} sessionPass={sessionPass} />;
+  return null;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
