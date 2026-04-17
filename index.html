@@ -36,6 +36,14 @@ const GAS_URL_KEY = "fichajes_gas_url";
 // ── URL del servidor (preconfigurada — los empleados no la ven) ──
 const GAS_URL_HARDCODED = "https://script.google.com/macros/s/AKfycbzb8U6vjQXMGWAc1i39Ehk7FEfyrfQLNZVjL_EwmPHf2GMLrnFoWOnif2uzxCtKaBYQ/exec";
 
+const LOGOUT_MS = 3 * 60 * 1000; // 3 minutos
+const WARN_MS   = 30 * 1000;      // aviso 30 s antes
+
+const daysAgo = (n) => {
+  const d = new Date(); d.setDate(d.getDate() - n);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+};
+
 /* ─────────────────────────────────────────
    API
 ───────────────────────────────────────── */
@@ -144,6 +152,51 @@ function ErrBox({ msg }) {
 function SocBadge({ name }) {
   if (!name) return null;
   return <span style={{ background:"#eff6ff", color:"#1d4ed8", fontSize:11, fontWeight:700, padding:"2px 8px", borderRadius:5, marginLeft:6 }}>{name}</span>;
+}
+
+// Hook de cierre de sesión automático por inactividad
+function useAutoLogout(active, onLogout) {
+  const [countdown, setCountdown] = useState(null);
+  useEffect(() => {
+    if (!active) { setCountdown(null); return; }
+    let logoutTimer, warnTimer, countdownInterval;
+    const reset = () => {
+      clearTimeout(logoutTimer); clearTimeout(warnTimer); clearInterval(countdownInterval);
+      setCountdown(null);
+      warnTimer = setTimeout(() => {
+        let secs = Math.round(WARN_MS / 1000);
+        setCountdown(secs);
+        countdownInterval = setInterval(() => { secs--; setCountdown(secs); if (secs <= 0) clearInterval(countdownInterval); }, 1000);
+      }, LOGOUT_MS - WARN_MS);
+      logoutTimer = setTimeout(() => { setCountdown(null); onLogout(); }, LOGOUT_MS);
+    };
+    const events = ["mousemove","keydown","click","touchstart","scroll"];
+    events.forEach(e => window.addEventListener(e, reset, { passive:true }));
+    reset();
+    return () => {
+      clearTimeout(logoutTimer); clearTimeout(warnTimer); clearInterval(countdownInterval);
+      events.forEach(e => window.removeEventListener(e, reset));
+    };
+  }, [active]);
+  return countdown;
+}
+
+function AutoLogoutWarning({ countdown, onStay }) {
+  if (countdown === null) return null;
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(15,23,42,0.6)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:300, padding:20 }}>
+      <div style={{ ...cardS, maxWidth:360, width:"100%", textAlign:"center" }}>
+        <div style={{ fontSize:36, marginBottom:12 }}>⏱</div>
+        <h3 style={{ margin:"0 0 8px", color:C.navy, fontSize:18, fontWeight:800 }}>Sesión a punto de cerrar</h3>
+        <p style={{ margin:"0 0 20px", color:C.muted, fontSize:14 }}>
+          Por inactividad, la sesión se cerrará en <strong style={{ color:C.danger, fontSize:20 }}>{countdown}s</strong>
+        </p>
+        <button style={btn(C.navy, "#fff", { width:"100%", padding:"13px", fontSize:15 })} onClick={onStay}>
+          Seguir conectado
+        </button>
+      </div>
+    </div>
+  );
 }
 
 /* ─────────────────────────────────────────
@@ -309,11 +362,6 @@ function Login({ gasUrl, onLogin }) {
           </div>
         )}
 
-        <button
-          onClick={() => { localStorage.removeItem(GAS_URL_KEY); location.reload(); }}
-          style={{ display:"block", margin:"18px auto 0", background:"none", border:"none", color:C.subtle, fontSize:12, cursor:"pointer", fontFamily:font, textDecoration:"underline" }}>
-          Cambiar URL del servidor
-        </button>
       </div>
     </div>
   );
@@ -330,6 +378,7 @@ function EmployeePanel({ gasUrl, user, now, logout }) {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
   const [err, setErr] = useState("");
+  const countdown = useAutoLogout(true, logout);
 
   const fetchFichs = async () => {
     setLoading(true);
@@ -392,6 +441,7 @@ function EmployeePanel({ gasUrl, user, now, logout }) {
 
   return (
     <div style={{ minHeight:"100vh", background:C.bg, padding:"20px 16px", fontFamily:font }}>
+      <AutoLogoutWarning countdown={countdown} onStay={() => {}} />
       <div style={{ maxWidth:480, margin:"0 auto" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18 }}>
           <span style={{ fontWeight:800, color:C.navy, fontSize:15 }}>🏢 Fichajes</span>
@@ -498,15 +548,18 @@ function AdminPanel({ gasUrl, sessionPass, logout, now }) {
   const [socFilter, setSocFilter] = useState("all");
   const [selectedFichs, setSelectedFichs] = useState(new Set());
   const [deletingMulti, setDeletingMulti] = useState(false);
+  const [desde, setDesde] = useState(daysAgo(30));
+  const [hasta, setHasta] = useState(todayStr());
   const [cfgForm, setCfgForm] = useState({ ap:"", ap2:"", up:"", up2:"" });
   const [cfgErr, setCfgErr] = useState(""); const [cfgOk, setCfgOk] = useState(false);
+  const countdown = useAutoLogout(true, logout);
 
   const fetchAll = async () => {
     setLoading(true); setErr("");
     try {
       const [eR, fR] = await Promise.all([
         callApi(gasUrl, "getEmployees", { role:"admin", pass:sessionPass }),
-        callApi(gasUrl, "getFichajes",  { role:"admin", pass:sessionPass }),
+        callApi(gasUrl, "getFichajes",  { role:"admin", pass:sessionPass, desde, hasta }),
       ]);
       const emps = eR.employees || [];
       setEmployees(emps);
@@ -516,7 +569,7 @@ function AdminPanel({ gasUrl, sessionPass, logout, now }) {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchAll(); }, []);
+  useEffect(() => { fetchAll(); }, [desde, hasta]);
 
   const openAdd  = () => { setEmpForm({ sociedad:sociedades[0]||"", nombre:"", dni:"", activo:"Sí" }); setEmpErr(""); setEmpModal({ mode:"add" }); };
   const openEdit = (emp) => { setEmpForm({ sociedad:emp.sociedad, nombre:emp.nombre, dni:emp.dni, activo:emp.activo }); setEmpErr(""); setEmpModal({ mode:"edit", id:emp.id }); };
@@ -582,6 +635,7 @@ function AdminPanel({ gasUrl, sessionPass, logout, now }) {
 
   return (
     <div style={{ minHeight:"100vh", background:C.bg, padding:"20px 16px", fontFamily:font }}>
+      <AutoLogoutWarning countdown={countdown} onStay={() => {}} />
       <div style={{ maxWidth:1020, margin:"0 auto" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
           <div>
@@ -644,7 +698,7 @@ function AdminPanel({ gasUrl, sessionPass, logout, now }) {
 
           {tab === "fichajes" && (
             <div style={cardS}>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16, flexWrap:"wrap", gap:8 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14, flexWrap:"wrap", gap:8 }}>
                 <h2 style={{ margin:0, fontSize:15, fontWeight:700, color:C.navy }}>Fichajes ({filteredFichs.length})</h2>
                 <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
                   {selectedFichs.size > 0 && (
@@ -655,6 +709,19 @@ function AdminPanel({ gasUrl, sessionPass, logout, now }) {
                   <button style={btn("#e2e8f0", C.text, { fontSize:13 })} onClick={doExportXLSX}>📊 XLSX</button>
                   <button style={btn("#e2e8f0", C.text, { fontSize:13 })} onClick={doExportPDF}>📄 PDF</button>
                 </div>
+              </div>
+              {/* Rango de fechas */}
+              <div style={{ display:"flex", gap:10, alignItems:"center", marginBottom:12, flexWrap:"wrap" }}>
+                <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                  <label style={{ ...lbl, margin:0, fontSize:11 }}>Desde</label>
+                  <input type="date" style={{ ...inp, width:"auto", padding:"7px 10px", fontSize:13 }} value={desde} onChange={e => { setDesde(e.target.value); setSelectedFichs(new Set()); }} />
+                </div>
+                <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                  <label style={{ ...lbl, margin:0, fontSize:11 }}>Hasta</label>
+                  <input type="date" style={{ ...inp, width:"auto", padding:"7px 10px", fontSize:13 }} value={hasta} onChange={e => { setHasta(e.target.value); setSelectedFichs(new Set()); }} />
+                </div>
+                <button style={btn("#f1f5f9", C.muted, { fontSize:12, padding:"7px 12px" })} onClick={() => { setDesde(daysAgo(30)); setHasta(todayStr()); }}>Últimos 30 días</button>
+                <button style={btn("#f1f5f9", C.muted, { fontSize:12, padding:"7px 12px" })} onClick={() => { setDesde("2020-01-01"); setHasta(todayStr()); }}>Todo el historial</button>
               </div>
               <input style={{ ...inp, marginBottom:14 }} value={search} onChange={e => { setSearch(e.target.value); setSelectedFichs(new Set()); }} placeholder="Buscar por nombre o DNI/NIE..." />
               {filteredFichs.length === 0 ? <div style={{ textAlign:"center", padding:"40px 0", color:C.subtle }}>Sin registros</div> : (
@@ -794,11 +861,14 @@ function AuditorPanel({ gasUrl, sessionPass, logout, now }) {
   const [dateFilter, setDateFilter] = useState("");
   const [tipoFilter, setTipoFilter] = useState("all");
   const [socFilter, setSocFilter] = useState("all");
+  const [desde, setDesde] = useState(daysAgo(30));
+  const [hasta, setHasta] = useState(todayStr());
+  const countdown = useAutoLogout(true, logout);
 
   const fetchFichs = async () => {
     setLoading(true); setErr("");
     try {
-      const res = await callApi(gasUrl, "getFichajes", { role:"auditor", pass:sessionPass });
+      const res = await callApi(gasUrl, "getFichajes", { role:"auditor", pass:sessionPass, desde, hasta });
       const f = res.fichajes || [];
       setFichajes(f);
       setSociedades([...new Set(f.map(x => x.sociedad).filter(Boolean))].sort());
@@ -806,7 +876,7 @@ function AuditorPanel({ gasUrl, sessionPass, logout, now }) {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchFichs(); }, []);
+  useEffect(() => { fetchFichs(); }, [desde, hasta]);
 
   const toSec = (v) => (v||"").split(":").reduce((a,x,i) => a + Number(x)*[3600,60,1][i], 0);
 
@@ -834,6 +904,7 @@ function AuditorPanel({ gasUrl, sessionPass, logout, now }) {
 
   return (
     <div style={{ minHeight:"100vh", background:C.bg, padding:"20px 16px", fontFamily:font }}>
+      <AutoLogoutWarning countdown={countdown} onStay={() => {}} />
       <div style={{ maxWidth:1100, margin:"0 auto" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
           <div>
@@ -869,6 +940,20 @@ function AuditorPanel({ gasUrl, sessionPass, logout, now }) {
         )}
 
         <div style={{ ...cardS, marginBottom:18 }}>
+          {/* Rango de carga (servidor) */}
+          <div style={{ display:"flex", gap:10, alignItems:"center", marginBottom:14, flexWrap:"wrap", paddingBottom:12, borderBottom:`1px solid ${C.border}` }}>
+            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+              <label style={{ ...lbl, margin:0, fontSize:11 }}>Desde</label>
+              <input type="date" style={{ ...inp, width:"auto", padding:"7px 10px", fontSize:13 }} value={desde} onChange={e => setDesde(e.target.value)} />
+            </div>
+            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+              <label style={{ ...lbl, margin:0, fontSize:11 }}>Hasta</label>
+              <input type="date" style={{ ...inp, width:"auto", padding:"7px 10px", fontSize:13 }} value={hasta} onChange={e => setHasta(e.target.value)} />
+            </div>
+            <button style={btn("#f1f5f9", C.muted, { fontSize:12, padding:"7px 12px" })} onClick={() => { setDesde(daysAgo(30)); setHasta(todayStr()); }}>Últimos 30 días</button>
+            <button style={btn("#f1f5f9", C.muted, { fontSize:12, padding:"7px 12px" })} onClick={() => { setDesde("2020-01-01"); setHasta(todayStr()); }}>Todo el historial</button>
+          </div>
+          {/* Filtros locales */}
           <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr 1fr", gap:12 }}>
             <div><label style={lbl}>Buscar empleado</label><input style={inp} value={search} onChange={e => setSearch(e.target.value)} placeholder="Nombre o DNI/NIE..." /></div>
             <div><label style={lbl}>Fecha</label><input type="date" style={inp} value={dateFilter} onChange={e => setDateFilter(e.target.value)} /></div>
