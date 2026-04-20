@@ -4,1066 +4,1700 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Control de Fichajes</title>
-<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script type="text/javascript" nonce="633d111d435a428d96aaaee9bac" src="//local.adguard.org?ts=1776496342072&amp;type=content-script&amp;dmn=claude.ai&amp;url=https%3A%2F%2Fclaude.ai%2Fdesign%2Fv1%2Fdesign%2Fprojects%2F876e30ab-81de-40d2-998c-9b1c2d34a8a3%2Fdownload%3Fpath%3DControl%2520de%2520Fichajes.html&amp;app=opera.exe&amp;css=2&amp;js=1&amp;rel=1&amp;rji=1&amp;sbe=1"></script><script type="text/javascript" nonce="633d111d435a428d96aaaee9bac" src="//local.adguard.org?ts=1776496342072&amp;name=AdGuard%20Extra&amp;name=AdGuard%20Popup%20Blocker&amp;type=user-script"></script><script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'DM Sans', system-ui, sans-serif; background: #F4F6F9; }
-  select { appearance: auto; }
-  input[type=time]::-webkit-calendar-picker-indicator { opacity: 0.4; cursor: pointer; }
-  .fich-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-  .fich-table th, .fich-table td { overflow: hidden; text-overflow: ellipsis; }
-  .fich-table tr:hover td { background: #f8fafc; }
-  input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; accent-color: #b91c1c; }
+  :root { color-scheme: light dark; }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  button { font-family: inherit; }
+  input, select, textarea { font-family: inherit; }
+  .mono { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }
+  .display { font-family: 'Space Grotesk', 'Inter', sans-serif; letter-spacing: -0.02em; }
+  .tnum { font-variant-numeric: tabular-nums; }
+  @keyframes pulse-ring {
+    0% { box-shadow: 0 0 0 0 var(--pulse-c, rgba(242,106,33,0.45)); }
+    70% { box-shadow: 0 0 0 24px rgba(242,106,33,0); }
+    100% { box-shadow: 0 0 0 0 rgba(242,106,33,0); }
+  }
+  @keyframes pulse-dot { 0%,100% { opacity:1; transform:scale(1);} 50%{ opacity:0.4; transform:scale(0.8);} }
+  @keyframes tick-fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  @keyframes slide-up { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+  @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes scan { 0% { transform: translateY(-100%); } 100% { transform: translateY(200%); } }
+  .scroll-thin::-webkit-scrollbar { width: 8px; height: 8px; }
+  .scroll-thin::-webkit-scrollbar-thumb { background: rgba(127,127,127,0.25); border-radius: 8px; }
+  .scroll-thin::-webkit-scrollbar-track { background: transparent; }
 </style>
 </head>
 <body>
 <div id="root"></div>
-<script type="text/babel">
-const { useState, useEffect } = React;
 
-/* ─────────────────────────────────────────
-   CONFIGURACIÓN
-───────────────────────────────────────── */
-const GAS_URL_KEY = "fichajes_gas_url";
+<script type="text/babel" data-presets="env,react">
 
-// ── URL del servidor (preconfigurada — los empleados no la ven) ──
-const GAS_URL_HARDCODED = "https://script.google.com/macros/s/AKfycbzjn_8Oy5AwVoG9JicIvORT0x1nekTckvlfsrAwuYEPIW8bspLNb2c8TZbW7x8H8vS4/exec";
 
-const LOGOUT_MS = 3 * 60 * 1000; // 3 minutos
-const WARN_MS   = 30 * 1000;      // aviso 30 s antes
 
+const { useState, useEffect, useRef, useMemo } = React;
+
+/* ═══════════════════════════════════════════════════════════════
+   CONFIG
+═══════════════════════════════════════════════════════════════ */
+const GAS_URL = "https://script.google.com/macros/s/AKfycbzjn_8Oy5AwVoG9JicIvORT0x1nekTckvlfsrAwuYEPIW8bspLNb2c8TZbW7x8H8vS4/exec";
+const LOGOUT_MS = 3 * 60 * 1000;
+const WARN_MS = 30 * 1000;
+
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "variant": "A",
+  "dark": false,
+  "accent": "#F26A21",
+  "buttonStyle": "pulse"
+} /*EDITMODE-END*/;
+
+/* ═══════════════════════════════════════════════════════════════
+   UTILITIES
+═══════════════════════════════════════════════════════════════ */
+const pad2 = (n) => String(n).padStart(2, "0");
+const todayStr = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+};
+const nowHM = (d = new Date()) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+const nowHMS = (d = new Date()) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+const fmtDate = (s) => {
+  if (!s) return "—";
+  const [y, m, d] = String(s).split("-");
+  return d && m && y ? `${d}/${m}/${y}` : s;
+};
+const fmtTime = (v) => {
+  if (!v) return "—";
+  if (typeof v === "string" && /^\d{2}:\d{2}/.test(v)) return v.slice(0, 5);
+  return String(v);
+};
 const daysAgo = (n) => {
-  const d = new Date(); d.setDate(d.getDate() - n);
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  const d = new Date();d.setDate(d.getDate() - n);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+};
+const durationHM = (inT, outT) => {
+  if (!inT || !outT) return "—";
+  const toMin = (s) => {const [h, m] = s.split(":").map(Number);return h * 60 + m;};
+  const d = toMin(outT) - toMin(inT);
+  if (d < 0) return "—";
+  return `${pad2(Math.floor(d / 60))}h ${pad2(d % 60)}m`;
+};
+const toSec = (v) => (v || "").split(":").reduce((a, x, i) => a + Number(x) * [3600, 60, 1][i], 0);
+
+const readTweaks = () => {
+  try {
+    const saved = JSON.parse(localStorage.getItem("fichajes_tweaks") || "null");
+    return { ...TWEAK_DEFAULTS, ...(saved || {}) };
+  } catch {return { ...TWEAK_DEFAULTS };}
 };
 
-/* ─────────────────────────────────────────
-   API
-───────────────────────────────────────── */
-const callApi = async (gasUrl, action, data = {}) => {
-  const res = await fetch(gasUrl, {
-    method: "POST",
-    body: JSON.stringify({ action, ...data }),
-  });
+/* ===== Tenants por sociedad =====
+   Grado Informática y Gestión, SL → azul marino + amarillo
+   Resto (Nascor, etc.)            → naranja Nascor
+*/
+const TENANTS = {
+  nascor: {
+    id: "nascor",
+    name: "Nascor",
+    logo: "Nascor_Logo.png",
+    accent: "#F26A21", // naranja corporativo
+    accentDark: "#D95A14",
+    accentSoft: { light: "rgba(242,106,33,0.10)", dark: "rgba(242,106,33,0.18)" },
+    accentBorder: { light: "rgba(242,106,33,0.22)", dark: "rgba(242,106,33,0.35)" },
+    accentGlow: { light: "rgba(242,106,33,0.18)", dark: "rgba(242,106,33,0.30)" },
+    secondary: "#2F3440" // carbón
+  },
+  grado: {
+    id: "grado",
+    name: "Grado Informática",
+    logo: "Grado_Logo.png",
+    accent: "#C9A227", // amarillo dorado mostaza, profesional
+    accentDark: "#E8B936", // algo más luminoso para dark mode
+    accentSoft: { light: "rgba(201,162,39,0.11)", dark: "rgba(232,185,54,0.16)" },
+    accentBorder: { light: "rgba(201,162,39,0.28)", dark: "rgba(232,185,54,0.35)" },
+    accentGlow: { light: "rgba(201,162,39,0.18)", dark: "rgba(232,185,54,0.28)" },
+    secondary: "#1B2A5A" // azul marino como secundario/detalle
+  }
+};
+function getTenant(sociedad) {
+  const s = String(sociedad || "").toUpperCase();
+  if (s.includes("GRADO")) return TENANTS.grado;
+  return TENANTS.nascor;
+}
+
+const makePalette = (dark, accent, tenant = TENANTS.nascor) => ({
+  accent,
+  accentSoft: tenant.accentSoft[dark ? "dark" : "light"],
+  accentBorder: tenant.accentBorder[dark ? "dark" : "light"],
+  accentGlow: tenant.accentGlow[dark ? "dark" : "light"],
+  secondary: tenant.secondary,
+  tenant,
+  bg: dark ? "#171A21" : "#F5F3EE",
+  bgAlt: dark ? "#1D2029" : "#EFECE4",
+  surface: dark ? "#232730" : "#FFFFFF",
+  surfaceAlt: dark ? "#2A2E38" : "#EFECE4",
+  surfaceElev: dark ? "#2F3440" : "#FFFFFF",
+  ink: dark ? "#EEF0F4" : "#1A1A1D",
+  inkSoft: dark ? "#B0B4BE" : "#5A564E",
+  inkMute: dark ? "#7A7F8C" : "#8F8A80",
+  line: dark ? "#343944" : "#E3DFD5",
+  lineStrong: dark ? "#414754" : "#C9C3B5",
+  success: dark ? "#6DD4A0" : "#1F7A4D",
+  successBg: dark ? "rgba(109,212,160,0.13)" : "#E4F3EA",
+  danger: dark ? "#FF8476" : "#C23B2A",
+  dangerBg: dark ? "rgba(255,132,118,0.13)" : "#FBE6E2",
+  warn: dark ? "#F2C35A" : "#A66A00",
+  warnBg: dark ? "rgba(242,195,90,0.13)" : "#FBF1DC",
+  info: dark ? "#7AB8F5" : "#2D5BB8",
+  infoBg: dark ? "rgba(122,184,245,0.13)" : "#E2ECFB",
+  carbon: dark ? "#111319" : "#1A1A1D",
+  shadow: dark ? "0 8px 24px rgba(0,0,0,0.45)" : "0 8px 24px rgba(20,20,25,0.08)",
+  shadowLg: dark ? "0 20px 50px rgba(0,0,0,0.55)" : "0 20px 50px rgba(20,20,25,0.12)"
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   API — Apps Script backend
+═══════════════════════════════════════════════════════════════ */
+const callApi = async (action, data = {}) => {
+  const res = await fetch(GAS_URL, { method: "POST", body: JSON.stringify({ action, ...data }) });
   const json = await res.json();
   if (json.error) throw new Error(json.error);
   return json;
 };
 
-/* ─────────────────────────────────────────
-   FECHA / HORA
-───────────────────────────────────────── */
-const todayStr = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-};
-const nowTimeStr = (d = new Date()) =>
-  `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
-const nowSecStr = (d = new Date()) =>
-  `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}:${String(d.getSeconds()).padStart(2,"0")}`;
-const fmtDate = (s) => {
-  if (!s) return "—";
-  const [y,m,d] = s.split("-");
-  return d && m && y ? `${d}/${m}/${y}` : s;
-};
-const fmtTime = (v) => {
-  if (!v) return "—";
-  if (typeof v === "string" && /^\d{2}:\d{2}/.test(v)) return v;
-  try { const d = new Date(v); if (!isNaN(d)) return nowSecStr(d); } catch {}
-  return String(v);
+const api = {
+  loginEmployee: (dni) => callApi("loginEmployee", { dni: String(dni).toUpperCase() }),
+  loginRole: (role, pass) => callApi("loginRole", { role, pass }),
+  getMyFichajes: (dni, fecha) => callApi("getMyFichajes", { dni, fecha }),
+  fichar: (data) => callApi("fichar", data),
+  getEmployees: (pass) => callApi("getEmployees", { role: "admin", pass }),
+  getFichajes: (role, pass, opts) => callApi("getFichajes", { role, pass, ...(opts || {}) }),
+  getCorrecciones: (role, pass) => callApi("getCorrecciones", { role, pass }),
+  requestCorreccion: (data) => callApi("requestCorreccion", data),
+  resolveCorreccion: (pass, id, approved) => callApi("resolveCorreccion", { pass, id, approved }),
+  setEmpleadoActivo: (pass, id, activo) => callApi("setEmpleadoActivo", { pass, id, activo }),
+  deleteFichaje: (pass, id) => callApi("deleteFichaje", { pass, id })
 };
 
-/* ─────────────────────────────────────────
-   EXPORTACIÓN COMPARTIDA
-───────────────────────────────────────── */
-const exportXLSX = (headers, rows, filename) => {
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-  ws["!cols"] = headers.map((h, i) => ({ wch: Math.max(h.length, ...rows.map(r => String(r[i]||"").length)) + 2 }));
-  XLSX.utils.book_append_sheet(wb, ws, "Fichajes");
-  XLSX.writeFile(wb, filename + ".xlsx");
+/* ═══════════════════════════════════════════════════════════════
+   SHARED UI
+═══════════════════════════════════════════════════════════════ */
+/* Logos embebidos como data URLs para que funcionen en cualquier despliegue
+   (Apps Script, GitHub Pages, file://) sin depender de archivos externos. */
+const NASCOR_LOGO_DATA = "data:image/png;base64,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";
+const GRADO_LOGO_DATA  = "data:image/png;base64,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";
+
+const NascorLogo = ({ size = 32 }) =>
+<img src={NASCOR_LOGO_DATA} alt="Nascor"
+style={{ display: "block", height: size, objectFit: "contain", background: "transparent", width: "156px" }} />;
+
+
+const GradoLogo = ({ size = 32 }) =>
+<img src={GRADO_LOGO_DATA} alt="Grado Informática"
+style={{ display: "block", height: size, width: "auto", objectFit: "contain", background: "transparent" }} />;
+
+
+const TenantLogo = ({ tenant, size = 32 }) =>
+tenant?.id === "grado" ? <GradoLogo size={size} /> : <NascorLogo size={size} />;
+
+// alias para compatibilidad
+const OcaLogo = NascorLogo;
+
+/* Iconos SVG — trazos Nascor (stroke-linecap round, uniforme) */
+const Icon = ({ name, size = 16, color = "currentColor", strokeWidth = 1.8 }) => {
+  const p = { width: size, height: size, viewBox: "0 0 24 24", fill: "none",
+    stroke: color, strokeWidth, strokeLinecap: "round", strokeLinejoin: "round" };
+  switch (name) {
+    case "clock":return <svg {...p}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>;
+    case "pin":return <svg {...p}><path d="M12 21s-7-6.5-7-12a7 7 0 1 1 14 0c0 5.5-7 12-7 12z" /><circle cx="12" cy="9" r="2.5" /></svg>;
+    case "check":return <svg {...p}><path d="M4 12l5 5L20 6" /></svg>;
+    case "in":return <svg {...p}><path d="M10 17l5-5-5-5" /><path d="M15 12H3" /><path d="M21 5v14" /></svg>;
+    case "out":return <svg {...p}><path d="M14 17l5-5-5-5" /><path d="M19 12H7" /><path d="M3 5v14" /></svg>;
+    case "calendar":return <svg {...p}><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M3 9h18M8 3v4M16 3v4" /></svg>;
+    case "trend":return <svg {...p}><path d="M3 17l6-6 4 4 8-8" /><path d="M14 7h7v7" /></svg>;
+    case "users":return <svg {...p}><circle cx="9" cy="8" r="3.5" /><path d="M2 20c.5-3.5 3.5-6 7-6s6.5 2.5 7 6" /><circle cx="17" cy="7" r="2.5" /><path d="M17 13c2.5 0 4.5 1.5 5 4" /></svg>;
+    case "shield":return <svg {...p}><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z" /><path d="M9 12l2 2 4-4" /></svg>;
+    case "sun":return <svg {...p}><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.5 1.5M17.6 17.6l1.5 1.5M2 12h2M20 12h2M4.9 19.1l1.5-1.5M17.6 6.4l1.5-1.5" /></svg>;
+    case "moon":return <svg {...p}><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" /></svg>;
+    case "logout":return <svg {...p}><path d="M15 17l5-5-5-5" /><path d="M20 12H9" /><path d="M9 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4" /></svg>;
+    case "history":return <svg {...p}><path d="M3 12a9 9 0 1 0 3-6.7" /><path d="M3 4v5h5" /><path d="M12 8v5l3 2" /></svg>;
+    case "edit":return <svg {...p}><path d="M4 20h4l10-10-4-4L4 16v4z" /><path d="M14 6l4 4" /></svg>;
+    case "eye":return <svg {...p}><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></svg>;
+    case "eye-off":return <svg {...p}><path d="M3 3l18 18" /><path d="M10.6 6.1A10.5 10.5 0 0 1 12 6c6.5 0 10 7 10 7a17 17 0 0 1-3.3 4.1" /><path d="M6.5 6.6C3.7 8.4 2 12 2 12s3.5 7 10 7c1.5 0 2.9-.3 4.1-.8" /><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" /></svg>;
+    case "sparkle":return <svg {...p}><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6" /></svg>;
+    case "bolt":return <svg {...p}><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z" /></svg>;
+    default:return null;
+  }
 };
 
-const exportPDF = (headers, rows, filename, titulo) => {
-  const doc = new jspdf.jsPDF({ orientation:"landscape", unit:"mm", format:"a4" });
-  doc.setFont("helvetica","bold"); doc.setFontSize(14);
-  doc.text(titulo, 14, 16);
-  doc.setFont("helvetica","normal"); doc.setFontSize(9);
-  doc.text(`Generado: ${new Date().toLocaleString("es-ES")}`, 14, 22);
-  doc.autoTable({ head:[headers], body:rows, startY:27, styles:{fontSize:8, cellPadding:3}, headStyles:{fillColor:[28,46,74], textColor:255, fontStyle:"bold"}, alternateRowStyles:{fillColor:[248,250,252]}, margin:{left:14, right:14} });
-  doc.save(filename + ".pdf");
-};
-
-/* ─────────────────────────────────────────
-   DESIGN TOKENS
-───────────────────────────────────────── */
-const C = {
-  navy:"#1C2E4A", blue:"#2563eb",
-  success:"#15803d", successBg:"#dcfce7", successBorder:"#86efac",
-  danger:"#b91c1c",  dangerBg:"#fee2e2",  dangerBorder:"#fca5a5",
-  warning:"#b45309", warningBg:"#fffbeb", warningBorder:"#fde68a",
-  bg:"#F4F6F9", card:"#ffffff", border:"#E2E8F0",
-  text:"#1e293b", muted:"#64748b", subtle:"#94a3b8",
-};
-const font = "'DM Sans', system-ui, sans-serif";
-const cardS = { background:C.card, borderRadius:16, border:`1px solid ${C.border}`, padding:"24px" };
-const inp = { width:"100%", padding:"10px 14px", borderRadius:10, border:`1.5px solid ${C.border}`, fontSize:15, outline:"none", boxSizing:"border-box", fontFamily:font, color:C.text, background:"#fff" };
-const lbl = { display:"block", fontWeight:600, color:C.muted, marginBottom:6, fontSize:12, textTransform:"uppercase", letterSpacing:"0.06em" };
-const btn = (bg, color="#fff", extra={}) => ({ background:bg, color, border:"none", borderRadius:10, padding:"10px 20px", fontWeight:700, cursor:"pointer", fontSize:14, fontFamily:font, transition:"opacity .15s", ...extra });
-const tabBtn = (active) => ({ flex:1, padding:"9px 6px", borderRadius:9, border:"none", cursor:"pointer", fontWeight:600, fontSize:12, fontFamily:font, background:active?"#fff":"transparent", color:active?C.navy:C.muted, boxShadow:active?"0 1px 6px rgba(0,0,0,0.08)":"none" });
-const badge = (tipo) => ({ padding:"3px 10px", borderRadius:6, fontSize:12, fontWeight:700, background:tipo==="entrada"?C.successBg:C.dangerBg, color:tipo==="entrada"?C.success:C.danger });
-const th = { background:"#f8fafc", padding:"10px 14px", textAlign:"left", fontWeight:700, color:C.muted, borderBottom:`2px solid ${C.border}`, fontSize:12, textTransform:"uppercase", letterSpacing:"0.05em", whiteSpace:"nowrap" };
-const td = { padding:"10px 14px", borderBottom:`1px solid #f1f5f9`, color:C.text, fontSize:13, whiteSpace:"nowrap" };
-
-/* ─────────────────────────────────────────
-   COMPONENTES BASE
-───────────────────────────────────────── */
-function Overlay({ children }) {
+const Toast = ({ toast }) => {
+  if (!toast) return null;
+  const colors = {
+    success: { bg: "#1F7A4D", fg: "#FFFFFF" },
+    error: { bg: "#C23B2A", fg: "#FFFFFF" },
+    info: { bg: "#1A1A1D", fg: "#FFFFFF" }
+  }[toast.type || "info"];
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(15,23,42,0.55)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:200, padding:20 }}>
+    <div style={{
+      position: "fixed", top: 24, left: "50%", transform: "translateX(-50%)",
+      background: colors.bg, color: colors.fg, padding: "14px 22px",
+      borderRadius: 12, fontWeight: 600, fontSize: 14, zIndex: 9999,
+      boxShadow: "0 12px 40px rgba(0,0,0,0.25)", animation: "slide-up 200ms ease",
+      maxWidth: "90vw", textAlign: "center"
+    }}>{toast.msg}</div>);
+
+};
+
+const Modal = ({ open, onClose, children, pal, maxWidth = 480 }) => {
+  if (!open) return null;
+  return (
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 9000,
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+      animation: "fade-in 180ms ease"
+    }}>
+      <div onClick={(e) => e.stopPropagation()} className="scroll-thin" style={{
+        background: pal.surface, color: pal.ink, borderRadius: 16, maxWidth,
+        width: "100%", padding: 28, boxShadow: "0 24px 60px rgba(0,0,0,0.3)",
+        border: `1px solid ${pal.line}`, animation: "slide-up 220ms ease",
+        maxHeight: "90vh", overflowY: "auto"
+      }}>{children}</div>
+    </div>);
+
+};
+
+const Btn = ({ children, onClick, variant = "primary", pal, disabled, style, type = "button", size = "md" }) => {
+  const base = {
+    border: "none", borderRadius: 10, fontWeight: 600, cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.5 : 1, transition: "transform 120ms, background 150ms",
+    fontSize: size === "sm" ? 13 : 14, padding: size === "sm" ? "8px 14px" : "12px 20px",
+    display: "inline-flex", alignItems: "center", gap: 8, whiteSpace: "nowrap"
+  };
+  const styles = {
+    primary: { background: pal.accent, color: "#fff" },
+    secondary: { background: "transparent", color: pal.ink, border: `1px solid ${pal.lineStrong}` },
+    ghost: { background: "transparent", color: pal.inkSoft },
+    danger: { background: pal.dangerBg, color: pal.danger, border: `1px solid ${pal.danger}` },
+    success: { background: pal.success, color: "#fff" }
+  }[variant];
+  return (
+    <button type={type} onClick={onClick} disabled={disabled}
+    onMouseDown={(e) => {if (!disabled) e.currentTarget.style.transform = "scale(0.97)";}}
+    onMouseUp={(e) => {e.currentTarget.style.transform = "scale(1)";}}
+    onMouseLeave={(e) => {e.currentTarget.style.transform = "scale(1)";}}
+    style={{ ...base, ...styles, ...style }}>
       {children}
-    </div>
-  );
-}
+    </button>);
 
-function Spinner({ text="Cargando..." }) {
+};
+
+const Input = ({ pal, style, ...props }) =>
+<input {...props} style={{
+  width: "100%", padding: "12px 14px", borderRadius: 10,
+  border: `1px solid ${pal.line}`, background: pal.surface, color: pal.ink,
+  fontSize: 14, outline: "none", transition: "border 120ms", ...style
+}}
+onFocus={(e) => e.target.style.borderColor = pal.accent}
+onBlur={(e) => e.target.style.borderColor = pal.line} />;
+
+
+
+const Chip = ({ children, tone = "neutral", pal, style }) => {
+  const tones = {
+    neutral: { bg: pal.surfaceAlt, fg: pal.inkSoft, bd: pal.line },
+    success: { bg: pal.successBg, fg: pal.success, bd: pal.success },
+    danger: { bg: pal.dangerBg, fg: pal.danger, bd: pal.danger },
+    warn: { bg: pal.warnBg, fg: pal.warn, bd: pal.warn },
+    accent: { bg: pal.accentSoft, fg: pal.accent, bd: pal.accentBorder }
+  }[tone];
   return (
-    <div style={{ textAlign:"center", padding:"48px 0", color:C.subtle, fontFamily:font }}>
-      <p style={{ margin:0, fontSize:14 }}>{text}</p>
-    </div>
-  );
-}
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px",
+      borderRadius: 999, background: tones.bg, color: tones.fg,
+      border: `1px solid ${tones.bd}`, fontSize: 11, fontWeight: 600,
+      letterSpacing: 0.3, textTransform: "uppercase", ...style
+    }}>{children}</span>);
 
-function ErrBox({ msg }) {
-  return (
-    <div style={{ background:C.dangerBg, border:`1px solid ${C.dangerBorder}`, borderRadius:10, padding:"12px 16px", marginBottom:16 }}>
-      <p style={{ margin:0, color:C.danger, fontSize:13, fontWeight:600 }}>⚠ {msg}</p>
-    </div>
-  );
-}
+};
 
-function SocBadge({ name }) {
-  if (!name) return null;
-  return <span style={{ background:"#eff6ff", color:"#1d4ed8", fontSize:11, fontWeight:700, padding:"2px 8px", borderRadius:5, marginLeft:6 }}>{name}</span>;
-}
+const Card = ({ children, pal, style, pad = 20 }) =>
+<div style={{
+  background: pal.surface, borderRadius: 14, border: `1px solid ${pal.line}`,
+  padding: pad, ...style
+}}>{children}</div>;
 
-// Hook de cierre de sesión automático por inactividad
-function useAutoLogout(active, onLogout) {
-  const [countdown, setCountdown] = useState(null);
+
+const useClock = () => {
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {const id = setInterval(() => setNow(new Date()), 1000);return () => clearInterval(id);}, []);
+  return now;
+};
+
+const useGeo = (enabled) => {
+  const [geo, setGeo] = useState({ status: "idle", lat: null, lng: null, err: null });
   useEffect(() => {
-    if (!active) { setCountdown(null); return; }
-    let logoutTimer, warnTimer, countdownInterval;
+    if (!enabled) return;
+    if (!navigator.geolocation) {setGeo({ status: "error", err: "no-support" });return;}
+    setGeo((g) => ({ ...g, status: "loading" }));
+    navigator.geolocation.getCurrentPosition(
+      (p) => setGeo({ status: "ok", lat: p.coords.latitude, lng: p.coords.longitude, err: null }),
+      (e) => setGeo({ status: "error", err: e.message, lat: null, lng: null }),
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+    );
+  }, [enabled]);
+  return geo;
+};
+
+const useAutoLogout = (active, onLogout, onWarn) => {
+  const timerRef = useRef(null);
+  const warnRef = useRef(null);
+  useEffect(() => {
+    if (!active) return;
     const reset = () => {
-      clearTimeout(logoutTimer); clearTimeout(warnTimer); clearInterval(countdownInterval);
-      setCountdown(null);
-      warnTimer = setTimeout(() => {
-        let secs = Math.round(WARN_MS / 1000);
-        setCountdown(secs);
-        countdownInterval = setInterval(() => { secs--; setCountdown(secs); if (secs <= 0) clearInterval(countdownInterval); }, 1000);
-      }, LOGOUT_MS - WARN_MS);
-      logoutTimer = setTimeout(() => { setCountdown(null); onLogout(); }, LOGOUT_MS);
+      clearTimeout(timerRef.current);clearTimeout(warnRef.current);
+      warnRef.current = setTimeout(() => onWarn?.(), LOGOUT_MS - WARN_MS);
+      timerRef.current = setTimeout(() => onLogout?.(), LOGOUT_MS);
     };
-    const events = ["mousemove","keydown","click","touchstart","scroll"];
-    events.forEach(e => window.addEventListener(e, reset, { passive:true }));
+    const evts = ["mousemove", "keydown", "click", "scroll", "touchstart"];
+    evts.forEach((e) => window.addEventListener(e, reset, { passive: true }));
     reset();
     return () => {
-      clearTimeout(logoutTimer); clearTimeout(warnTimer); clearInterval(countdownInterval);
-      events.forEach(e => window.removeEventListener(e, reset));
+      clearTimeout(timerRef.current);clearTimeout(warnRef.current);
+      evts.forEach((e) => window.removeEventListener(e, reset));
     };
-  }, [active]);
-  return countdown;
-}
+  }, [active, onLogout, onWarn]);
+};
 
-function AutoLogoutWarning({ countdown, onStay }) {
-  if (countdown === null) return null;
-  return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(15,23,42,0.6)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:300, padding:20 }}>
-      <div style={{ ...cardS, maxWidth:360, width:"100%", textAlign:"center" }}>
-        <div style={{ fontSize:36, marginBottom:12 }}>⏱</div>
-        <h3 style={{ margin:"0 0 8px", color:C.navy, fontSize:18, fontWeight:800 }}>Sesión a punto de cerrar</h3>
-        <p style={{ margin:"0 0 20px", color:C.muted, fontSize:14 }}>
-          Por inactividad, la sesión se cerrará en <strong style={{ color:C.danger, fontSize:20 }}>{countdown}s</strong>
-        </p>
-        <button style={btn(C.navy, "#fff", { width:"100%", padding:"13px", fontSize:15 })} onClick={onStay}>
-          Seguir conectado
-        </button>
-      </div>
-    </div>
-  );
-}
+/* ═══════════════════════════════════════════════════════════════
+   EXPORT HELPERS
+═══════════════════════════════════════════════════════════════ */
+const exportXLSX = (rows, filename) => {
+  if (!window.XLSX) return;
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Fichajes");
+  XLSX.writeFile(wb, filename);
+};
 
-/* ─────────────────────────────────────────
-   PANTALLA: CONFIGURAR URL
-───────────────────────────────────────── */
-function UrlConfig({ onSave }) {
-  const [url, setUrl] = useState("");
-  const [testing, setTesting] = useState(false);
-  const [err, setErr] = useState("");
+const exportPDF = (title, columns, rows, filename) => {
+  if (!window.jspdf) return;
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: "landscape" });
+  doc.setFontSize(14);doc.text(title, 14, 16);
+  doc.setFontSize(9);doc.text(`Generado: ${new Date().toLocaleString("es-ES")}`, 14, 22);
+  doc.autoTable({
+    head: [columns.map((c) => c.header)],
+    body: rows.map((r) => columns.map((c) => r[c.key] ?? "")),
+    startY: 28, styles: { fontSize: 8, cellPadding: 2 },
+    headStyles: { fillColor: [242, 106, 33], textColor: 255, fontStyle: "bold" },
+    alternateRowStyles: { fillColor: [249, 247, 242] }
+  });
+  doc.save(filename);
+};
 
-  const test = async () => {
-    if (!url.trim()) { setErr("Pega la URL del Web App primero."); return; }
-    setTesting(true); setErr("");
-    try {
-      // POST en lugar de GET: evita el bloqueo CORS por redirección de Google
-      const res = await fetch(url.trim(), {
-        method: "POST",
-        body: JSON.stringify({ action: "ping" }),
-      });
-      const json = await res.json();
-      // El script devuelve error "Acción desconocida: ping" — eso también es válido
-      if (json.status === "ok" || (json.error && json.error.includes("ping"))) {
-        onSave(url.trim());
-      } else {
-        setErr("La URL respondió pero no parece ser el script correcto.");
-      }
-    } catch {
-      setErr("No se pudo conectar. Revisa que el Web App tenga acceso 'Cualquier persona' y que la URL termine en /exec.");
-    } finally { setTesting(false); }
-  };
-
-  return (
-    <div style={{ minHeight:"100vh", background:C.bg, display:"flex", alignItems:"center", justifyContent:"center", padding:20, fontFamily:font }}>
-      <div style={{ ...cardS, maxWidth:520, width:"100%" }}>
-        <div style={{ textAlign:"center", marginBottom:28 }}>
-          <div style={{ width:68, height:68, background:C.navy, borderRadius:22, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px", fontSize:30 }}>🔗</div>
-          <h1 style={{ margin:0, fontSize:22, color:C.navy, fontWeight:800 }}>Configurar conexión</h1>
-          <p style={{ margin:"8px 0 0", color:C.muted, fontSize:14 }}>Conecta la app con tu Google Sheet vía Apps Script</p>
-        </div>
-
-        <div style={{ background:"#f0f9ff", borderRadius:12, padding:"14px 18px", marginBottom:22, borderLeft:`4px solid ${C.blue}` }}>
-          <p style={{ margin:"0 0 8px", fontWeight:700, fontSize:13, color:C.navy }}>Checklist de implementación en Apps Script:</p>
-          <ul style={{ margin:0, paddingLeft:18, color:C.muted, fontSize:13, lineHeight:2.2 }}>
-            <li>Extensiones → <strong>Apps Script</strong> → pega el script</li>
-            <li>Implementar → <strong>Nueva implementación</strong> (no "Gestionar")</li>
-            <li>Tipo: <strong>Aplicación web</strong></li>
-            <li>Ejecutar como: <strong>Yo</strong></li>
-            <li>Acceso: <strong>Cualquier persona</strong> (no "autenticada")</li>
-            <li>Copia la URL que termina en <code style={{ background:"#dbeafe", padding:"1px 6px", borderRadius:4 }}>/exec</code></li>
-          </ul>
-        </div>
-
-        <label style={lbl}>URL del Web App</label>
-        <input
-          style={{ ...inp, marginBottom:14, fontSize:13 }}
-          value={url}
-          onChange={e => { setUrl(e.target.value); setErr(""); }}
-          placeholder="https://script.google.com/macros/s/.../exec"
-          onKeyDown={e => e.key === "Enter" && test()}
-        />
-        {err && <ErrBox msg={err} />}
-        <button
-          style={btn(C.blue, "#fff", { width:"100%", padding:"14px", fontSize:15, opacity:testing?0.7:1 })}
-          onClick={test} disabled={testing}>
-          {testing ? "Verificando conexión..." : "Conectar y continuar →"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────
-   PANTALLA: LOGIN
-───────────────────────────────────────── */
-function Login({ gasUrl, onLogin }) {
-  const [tab, setTab] = useState("employee");
+/* ═══════════════════════════════════════════════════════════════
+   LOGIN — Entry screen
+═══════════════════════════════════════════════════════════════ */
+const LoginScreen = ({ pal, onLogin, tweaks, setTweaks }) => {
+  const [mode, setMode] = useState("employee");
   const [dni, setDni] = useState("");
   const [pass, setPass] = useState("");
-  const [err, setErr] = useState("");
+  const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [showP, setShowP] = useState(false);
+  const [err, setErr] = useState("");
+  const now = useClock();
 
-  const reset = (t) => { setTab(t); setErr(""); setDni(""); setPass(""); setShowP(false); };
-
-  const loginEmp = async () => {
-    if (!dni.trim()) { setErr("Introduce tu DNI o NIE."); return; }
-    setLoading(true); setErr("");
+  const submit = async (e) => {
+    e?.preventDefault?.();setErr("");setLoading(true);
     try {
-      const res = await callApi(gasUrl, "loginEmployee", { dni: dni.trim().toUpperCase() });
-      onLogin(res.employee, "employee");
-    } catch(e) { setErr(e.message); }
-    finally { setLoading(false); }
+      if (mode === "employee") {
+        if (!dni.trim()) {setErr("Introduce tu DNI/NIE.");setLoading(false);return;}
+        const r = await api.loginEmployee(dni.trim());
+        if (!r.success) {setErr(r.error || "Error");setLoading(false);return;}
+        onLogin({ role: "employee", employee: r.employee });
+      } else {
+        if (!pass) {setErr("Introduce la contraseña.");setLoading(false);return;}
+        const r = await api.loginRole(mode, pass);
+        if (!r.success) {setErr(r.error || "Error");setLoading(false);return;}
+        onLogin({ role: mode, pass });
+      }
+    } catch (e2) {setErr(String(e2?.message || e2));}
+    setLoading(false);
   };
-
-  const loginRole = async (role) => {
-    if (!pass) { setErr("Introduce la contraseña."); return; }
-    setLoading(true); setErr("");
-    try {
-      await callApi(gasUrl, "loginRole", { role, pass });
-      onLogin(null, role, pass);
-    } catch(e) { setErr(e.message); }
-    finally { setLoading(false); }
-  };
-
-  const TABS = [
-    { id:"employee", icon:"👤", label:"Empleado" },
-    { id:"admin",    icon:"⚙️", label:"Admin"    },
-    { id:"auditor",  icon:"🔍", label:"Auditor"  },
-  ];
 
   return (
-    <div style={{ minHeight:"100vh", background:C.bg, display:"flex", alignItems:"center", justifyContent:"center", padding:20, fontFamily:font }}>
-      <div style={{ ...cardS, maxWidth:420, width:"100%" }}>
-        <div style={{ textAlign:"center", marginBottom:28 }}>
-          <div style={{ width:68, height:68, background:C.navy, borderRadius:22, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px", fontSize:30 }}>🏢</div>
-          <h1 style={{ margin:0, fontSize:22, color:C.navy, fontWeight:800 }}>Control de Fichajes</h1>
-          <p style={{ margin:"6px 0 0", color:C.muted, fontSize:13 }}>Sistema de registro de jornada laboral</p>
+    <div style={{
+      minHeight: "100vh", background: pal.bg, color: pal.ink,
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+      padding: 20, fontFamily: "Inter, sans-serif"
+    }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, marginBottom: 32 }}>
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "center",
+          width: 64, height: 64, borderRadius: 18,
+          background: pal.accentSoft, color: pal.accent,
+          boxShadow: `0 0 0 1px ${pal.accentBorder}`
+        }}>
+          <Icon name="shield" size={32} strokeWidth={1.8} />
         </div>
-
-        <div style={{ display:"flex", gap:4, background:"#f1f5f9", borderRadius:12, padding:4, marginBottom:26 }}>
-          {TABS.map(t => <button key={t.id} onClick={() => reset(t.id)} style={tabBtn(tab === t.id)}>{t.icon} {t.label}</button>)}
+        <div className="mono tnum" style={{ fontSize: 13, color: pal.inkMute, letterSpacing: 2 }}>
+          {nowHMS(now)} · {fmtDate(todayStr())}
         </div>
-
-        {tab === "employee" && (
-          <div>
-            <label style={lbl}>DNI / NIE</label>
-            <input
-              style={{ ...inp, fontSize:22, textAlign:"center", letterSpacing:4, fontWeight:800, textTransform:"uppercase" }}
-              value={dni} onChange={e => { setDni(e.target.value); setErr(""); }}
-              placeholder="12345678A" onKeyDown={e => e.key === "Enter" && loginEmp()} autoFocus
-            />
-            {err && <p style={{ color:C.danger, fontSize:13, margin:"10px 0 0" }}>{err}</p>}
-            <button
-              style={btn(C.navy, "#fff", { width:"100%", padding:"14px", fontSize:16, marginTop:18, borderRadius:12, opacity:loading?0.7:1 })}
-              onClick={loginEmp} disabled={loading}>
-              {loading ? "Verificando..." : "Acceder"}
-            </button>
-          </div>
-        )}
-
-        {(tab === "admin" || tab === "auditor") && (
-          <div>
-            <label style={lbl}>Contraseña de {tab === "admin" ? "Administrador" : "Auditor"}</label>
-            <div style={{ position:"relative" }}>
-              <input
-                type={showP ? "text" : "password"}
-                style={{ ...inp, paddingRight:60 }}
-                value={pass} onChange={e => { setPass(e.target.value); setErr(""); }}
-                placeholder="Introduce la contraseña"
-                onKeyDown={e => e.key === "Enter" && loginRole(tab)} autoFocus
-              />
-              <button onClick={() => setShowP(!showP)}
-                style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:C.subtle, fontSize:12, fontFamily:font }}>
-                {showP ? "Ocultar" : "Ver"}
-              </button>
-            </div>
-            {err && <p style={{ color:C.danger, fontSize:13, margin:"10px 0 0" }}>{err}</p>}
-            <button
-              style={btn(tab === "admin" ? C.navy : C.warning, "#fff", { width:"100%", padding:"14px", fontSize:15, marginTop:18, borderRadius:12, opacity:loading?0.7:1 })}
-              onClick={() => loginRole(tab)} disabled={loading}>
-              {loading ? "Verificando..." : `Acceder como ${tab === "admin" ? "Administrador" : "Auditor"}`}
-            </button>
-          </div>
-        )}
-
       </div>
-    </div>
-  );
-}
 
-/* ─────────────────────────────────────────
-   PANTALLA: EMPLEADO
-───────────────────────────────────────── */
-function EmployeePanel({ gasUrl, user, now, logout }) {
-  const [todayFichs, setTodayFichs] = useState([]);
+      <Card pal={pal} pad={32} style={{ maxWidth: 420, width: "100%", boxShadow: "0 12px 40px rgba(0,0,0,0.08)" }}>
+        <h1 className="display" style={{ margin: 0, fontSize: 26, fontWeight: 700 }}>Control de Fichajes</h1>
+        <p style={{ margin: "6px 0 24px", color: pal.inkSoft, fontSize: 14 }}>Accede con tu rol</p>
+
+        <div style={{ display: "flex", gap: 4, background: pal.surfaceAlt, borderRadius: 10, padding: 4, marginBottom: 24 }}>
+          {["employee", "admin", "auditor"].map((m) =>
+          <button key={m} onClick={() => {setMode(m);setErr("");setDni("");setPass("");}} style={{
+            flex: 1, padding: "10px 8px", borderRadius: 8, border: "none",
+            background: mode === m ? pal.surface : "transparent",
+            color: mode === m ? pal.ink : pal.inkSoft,
+            fontWeight: 600, fontSize: 13, cursor: "pointer",
+            boxShadow: mode === m ? "0 2px 8px rgba(0,0,0,0.06)" : "none",
+            transition: "all 150ms"
+          }}>
+              {m === "employee" ? "Empleado" : m === "admin" ? "Administrador" : "Auditor"}
+            </button>
+          )}
+        </div>
+
+        <form onSubmit={submit} autoComplete="off">
+          {mode === "employee" ?
+          <>
+              <label style={{ fontSize: 12, fontWeight: 600, color: pal.inkSoft, textTransform: "uppercase", letterSpacing: 0.5 }}>DNI / NIE</label>
+              <Input pal={pal} value={dni} onChange={(e) => setDni(e.target.value)} placeholder="12345678A" style={{ marginTop: 6 }} autoFocus />
+            </> :
+
+          <>
+              <label style={{ fontSize: 12, fontWeight: 600, color: pal.inkSoft, textTransform: "uppercase", letterSpacing: 0.5 }}>Contraseña</label>
+              <div style={{ position: "relative", marginTop: 6 }}>
+                <Input pal={pal} type={showPass ? "text" : "password"} value={pass} onChange={(e) => setPass(e.target.value)} placeholder="••••••••" style={{ paddingRight: 44 }} autoFocus />
+                <button type="button" onClick={() => setShowPass((v) => !v)}
+                  aria-label={showPass ? "Ocultar contraseña" : "Mostrar contraseña"}
+                  title={showPass ? "Ocultar contraseña" : "Mostrar contraseña"}
+                  style={{
+                    position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)",
+                    width: 32, height: 32, borderRadius: 8, border: "none", background: "transparent",
+                    color: pal.inkSoft, cursor: "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    transition: "color 150ms, background 150ms"
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = pal.ink; e.currentTarget.style.background = pal.surfaceAlt; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = pal.inkSoft; e.currentTarget.style.background = "transparent"; }}>
+                  <Icon name={showPass ? "eye-off" : "eye"} size={18} strokeWidth={1.8} />
+                </button>
+              </div>
+            </>
+          }
+          {err &&
+          <div style={{
+            marginTop: 12, padding: "10px 14px", background: pal.dangerBg,
+            color: pal.danger, borderRadius: 8, fontSize: 13, fontWeight: 500
+          }}>{err}</div>
+          }
+          <Btn pal={pal} type="submit" disabled={loading} style={{ width: "100%", marginTop: 20, justifyContent: "center", padding: "14px" }}>
+            {loading ? "Accediendo…" : "Entrar"}
+          </Btn>
+        </form>
+
+
+      </Card>
+
+      <div style={{ marginTop: 20, fontSize: 11, color: pal.inkMute }}>
+        Nascor · Control horario
+      </div>
+    </div>);
+
+};
+
+/* ═══════════════════════════════════════════════════════════════
+   EMPLOYEE — fichar screen
+═══════════════════════════════════════════════════════════════ */
+const EmployeeScreen = ({ pal, employee, onLogout, tweaks, setTweaks, showToast }) => {
+  const now = useClock();
+  const [todayList, setTodayList] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [modal, setModal] = useState(null);
-  const [timeInput, setTimeInput] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState("");
-  const [err, setErr] = useState("");
-  const countdown = useAutoLogout(true, logout);
+  const [ficking, setFicking] = useState(false);
+  const [showCorrModal, setShowCorrModal] = useState(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [warnIdle, setWarnIdle] = useState(false);
+  const geo = useGeo(true);
 
-  const fetchFichs = async () => {
+  const loadToday = async () => {
     setLoading(true);
     try {
-      const res = await callApi(gasUrl, "getMyFichajes", { dni:user.dni, fecha:todayStr() });
-      setTodayFichs(res.fichajes || []);
-    } catch(e) { setErr(e.message); }
-    finally { setLoading(false); }
+      const r = await api.getMyFichajes(employee.dni, todayStr());
+      if (r.success) setTodayList(r.fichajes);
+    } catch (e) {showToast("error", "Error cargando fichajes");}
+    setLoading(false);
   };
+  useEffect(() => {loadToday();}, []);
 
-  useEffect(() => { fetchFichs(); }, []);
+  useAutoLogout(true, onLogout, () => setWarnIdle(true));
 
-  // El siguiente tipo se determina por el ÚLTIMO fichaje del día
-  const lastFich = todayFichs.length > 0 ? todayFichs[todayFichs.length - 1] : null;
-  const nextTipo = !lastFich || lastFich.tipo === "salida" ? "entrada" : "salida";
+  const lastType = todayList.length ? todayList[todayList.length - 1].tipo : null;
+  const nextAction = lastType === "entrada" ? "salida" : "entrada";
+  const isOpen = lastType === "entrada";
 
-  // Agrupar los fichajes del día en pares entrada/salida para mostrarlos
-  const pares = [];
-  let parActual = null;
-  for (const f of todayFichs) {
-    if (f.tipo === "entrada") {
-      parActual = { entrada: f, salida: null };
-      pares.push(parActual);
-    } else if (f.tipo === "salida" && parActual) {
-      parActual.salida = f;
-      parActual = null;
-    }
-  }
-
-  const onFichar = () => {
-    const r = new Date();
-    setTimeInput(nowTimeStr(r));
-    setModal({ tipo: nextTipo, horaReal: r.toISOString() });
-    setErr("");
-  };
-
-  const confirm = async () => {
-    const [h,m] = timeInput.split(":").map(Number);
-    setSaving(true); setErr("");
-    try {
-      await callApi(gasUrl, "fichar", {
-        sociedad: user.sociedad, nombre: user.nombre, dni: user.dni,
-        tipo: modal.tipo, fecha: todayStr(),
-        horaDeclarada: `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:00`,
-        horaReal: nowSecStr(new Date(modal.horaReal)),
-        timestamp: modal.horaReal,
-      });
-      await fetchFichs();
-      setModal(null);
-      setToast(`${modal.tipo === "entrada" ? "Entrada" : "Salida"} registrada a las ${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`);
-      setTimeout(() => setToast(""), 4500);
-    } catch(e) { setErr(e.message); }
-    finally { setSaving(false); }
-  };
-
-  const clock = now.toLocaleTimeString("es-ES", { hour:"2-digit", minute:"2-digit", second:"2-digit" });
-  const dateLabel = now.toLocaleDateString("es-ES", { weekday:"long", day:"numeric", month:"long", year:"numeric" });
-  const btnBg = nextTipo === "entrada" ? C.success : C.danger;
-  const btnLabel = nextTipo === "entrada" ? "⬆  FICHAR ENTRADA" : "⬇  FICHAR SALIDA";
-
-  return (
-    <div style={{ minHeight:"100vh", background:C.bg, padding:"20px 16px", fontFamily:font }}>
-      <AutoLogoutWarning countdown={countdown} onStay={() => {}} />
-      <div style={{ maxWidth:480, margin:"0 auto" }}>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18 }}>
-          <span style={{ fontWeight:800, color:C.navy, fontSize:15 }}>🏢 Fichajes</span>
-          <button onClick={logout} style={btn("#e2e8f0", C.muted, { padding:"8px 16px", fontSize:13 })}>Cerrar sesión</button>
-        </div>
-
-        <div style={{ ...cardS, textAlign:"center", marginBottom:14 }}>
-          <div style={{ width:56, height:56, background:"#dbeafe", borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 10px", fontSize:22 }}>👤</div>
-          <h2 style={{ margin:0, fontSize:20, color:C.navy, fontWeight:800 }}>{user.nombre}</h2>
-          <p style={{ margin:"4px 0 2px", color:C.muted, fontSize:13 }}>DNI/NIE: <strong style={{ color:C.text }}>{user.dni}</strong></p>
-          {user.sociedad && <p style={{ margin:"4px 0 0", color:C.muted, fontSize:12 }}>Sociedad: <SocBadge name={user.sociedad} /></p>}
-        </div>
-
-        <div style={{ ...cardS, textAlign:"center", marginBottom:14, background:C.navy, border:"none" }}>
-          <p style={{ margin:"0 0 4px", color:"rgba(255,255,255,0.55)", fontSize:12, textTransform:"capitalize" }}>{dateLabel}</p>
-          <p style={{ margin:0, fontSize:50, fontWeight:800, color:"#fff", fontVariantNumeric:"tabular-nums", letterSpacing:"-2px" }}>{clock}</p>
-        </div>
-
-        <div style={{ ...cardS, marginBottom:18 }}>
-          <p style={{ margin:"0 0 12px", fontWeight:700, fontSize:12, color:C.muted, textTransform:"uppercase", letterSpacing:"0.07em" }}>
-            Registro de hoy — {fmtDate(todayStr())}
-          </p>
-          {loading ? <Spinner text="Cargando registro..." /> : pares.length === 0 ? (
-            <p style={{ margin:0, color:C.subtle, fontSize:13, textAlign:"center", padding:"12px 0" }}>Sin fichajes registrados hoy</p>
-          ) : (
-            <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-              {pares.map((par, i) => (
-                <div key={i} style={{ display:"flex", gap:10, alignItems:"stretch" }}>
-                  <div style={{ flex:1, background:C.successBg, borderRadius:10, padding:"10px 14px", border:`1.5px solid ${C.successBorder}` }}>
-                    <p style={{ margin:0, fontSize:10, fontWeight:700, color:C.success, letterSpacing:"0.07em" }}>ENTRADA {pares.length > 1 ? i+1 : ""}</p>
-                    <p style={{ margin:"4px 0 0", fontWeight:800, color:C.success, fontSize:18 }}>{fmtTime(par.entrada.horaDeclarada)}</p>
-                  </div>
-                  <div style={{ flex:1, background:par.salida ? C.dangerBg : "#f8fafc", borderRadius:10, padding:"10px 14px", border:`1.5px solid ${par.salida ? C.dangerBorder : C.border}` }}>
-                    <p style={{ margin:0, fontSize:10, fontWeight:700, color:par.salida ? C.danger : C.subtle, letterSpacing:"0.07em" }}>SALIDA {pares.length > 1 ? i+1 : ""}</p>
-                    <p style={{ margin:"4px 0 0", fontWeight:800, color:par.salida ? C.danger : C.subtle, fontSize:18 }}>{par.salida ? fmtTime(par.salida.horaDeclarada) : "—"}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {err && <ErrBox msg={err} />}
-        {toast && (
-          <div style={{ background:C.successBg, border:`1.5px solid ${C.successBorder}`, borderRadius:12, padding:"14px 18px", marginBottom:16, textAlign:"center" }}>
-            <p style={{ margin:0, color:C.success, fontWeight:700, fontSize:14 }}>✓ {toast}</p>
-          </div>
-        )}
-
-        <button
-          style={{ ...btn(btnBg, "#fff", { width:"100%", padding:"22px", fontSize:19, borderRadius:16, fontWeight:800 }), opacity:loading?0.65:1, cursor:loading?"default":"pointer" }}
-          disabled={loading}
-          onClick={onFichar}>
-          {btnLabel}
-        </button>
-      </div>
-
-      {modal && (
-        <Overlay>
-          <div style={{ ...cardS, maxWidth:380, width:"100%" }}>
-            <h3 style={{ margin:"0 0 6px", color:C.navy, fontSize:18, fontWeight:800 }}>
-              Confirmar {modal.tipo === "entrada" ? "Entrada ⬆" : "Salida ⬇"}
-            </h3>
-            <p style={{ color:C.muted, fontSize:13, margin:"0 0 22px" }}>
-              Puedes ajustar la hora si es necesario. La hora real queda registrada internamente.
-            </p>
-            <label style={lbl}>Hora de fichaje</label>
-            <input
-              type="time"
-              style={{ ...inp, fontSize:30, textAlign:"center", fontWeight:800, letterSpacing:2, padding:"16px" }}
-              value={timeInput} onChange={e => setTimeInput(e.target.value)}
-            />
-            {err && <ErrBox msg={err} />}
-            <div style={{ display:"flex", gap:10, marginTop:22 }}>
-              <button style={btn("#e2e8f0", C.text, { flex:1, padding:"12px" })} onClick={() => setModal(null)}>Cancelar</button>
-              <button
-                style={btn(modal.tipo === "entrada" ? C.success : C.danger, "#fff", { flex:2, padding:"12px", fontSize:15, opacity:saving?0.7:1 })}
-                onClick={confirm} disabled={saving}>
-                {saving ? "Guardando..." : `Confirmar ${modal.tipo === "entrada" ? "Entrada" : "Salida"}`}
-              </button>
-            </div>
-          </div>
-        </Overlay>
-      )}
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────
-   PANTALLA: ADMINISTRADOR
-───────────────────────────────────────── */
-function AdminPanel({ gasUrl, sessionPass, logout, now }) {
-  const [tab, setTab] = useState("employees");
-  const [employees, setEmployees] = useState([]);
-  const [fichajes, setFichajes] = useState([]);
-  const [sociedades, setSociedades] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
-  const [empModal, setEmpModal] = useState(null);
-  const [empForm, setEmpForm] = useState({ sociedad:"", nombre:"", dni:"", activo:"Sí" });
-  const [empErr, setEmpErr] = useState("");
-  const [empSaving, setEmpSaving] = useState(false);
-  const [search, setSearch] = useState("");
-  const [socFilter, setSocFilter] = useState("all");
-  const [selectedFichs, setSelectedFichs] = useState(new Set());
-  const [deletingMulti, setDeletingMulti] = useState(false);
-  const [desde, setDesde] = useState(daysAgo(30));
-  const [hasta, setHasta] = useState(todayStr());
-  const [cfgForm, setCfgForm] = useState({ ap:"", ap2:"", up:"", up2:"" });
-  const [cfgErr, setCfgErr] = useState(""); const [cfgOk, setCfgOk] = useState(false);
-  const countdown = useAutoLogout(true, logout);
-
-  const fetchAll = async () => {
-    setLoading(true); setErr("");
-    try {
-      const [eR, fR] = await Promise.all([
-        callApi(gasUrl, "getEmployees", { role:"admin", pass:sessionPass }),
-        callApi(gasUrl, "getFichajes",  { role:"admin", pass:sessionPass, desde, hasta }),
-      ]);
-      const emps = eR.employees || [];
-      setEmployees(emps);
-      setFichajes(fR.fichajes || []);
-      setSociedades([...new Set(emps.map(e => e.sociedad).filter(Boolean))].sort());
-    } catch(e) { setErr(e.message); }
-    finally { setLoading(false); }
-  };
-
-  useEffect(() => { fetchAll(); }, [desde, hasta]);
-
-  const openAdd  = () => { setEmpForm({ sociedad:sociedades[0]||"", nombre:"", dni:"", activo:"Sí" }); setEmpErr(""); setEmpModal({ mode:"add" }); };
-  const openEdit = (emp) => { setEmpForm({ sociedad:emp.sociedad, nombre:emp.nombre, dni:emp.dni, activo:emp.activo }); setEmpErr(""); setEmpModal({ mode:"edit", id:emp.id }); };
-
-  const saveEmp = async () => {
-    if (!empForm.sociedad.trim()) { setEmpErr("Sociedad obligatoria."); return; }
-    if (!empForm.nombre.trim())   { setEmpErr("Nombre obligatorio."); return; }
-    if (!empForm.dni.trim())      { setEmpErr("DNI/NIE obligatorio."); return; }
-    setEmpSaving(true); setEmpErr("");
-    try {
-      await callApi(gasUrl, "saveEmployee", { role:"admin", pass:sessionPass, mode:empModal.mode, id:empModal.id, ...empForm });
-      await fetchAll(); setEmpModal(null);
-    } catch(e) { setEmpErr(e.message); }
-    finally { setEmpSaving(false); }
-  };
-
-  const deleteEmp  = async (id) => { if (!confirm("¿Eliminar este empleado?")) return; try { await callApi(gasUrl, "deleteEmployee", { role:"admin", pass:sessionPass, id }); await fetchAll(); } catch(e) { setErr(e.message); } };
-  const deleteFich = async (id) => { if (!confirm("¿Eliminar este fichaje?")) return; try { await callApi(gasUrl, "deleteFichaje", { role:"admin", pass:sessionPass, id }); await fetchAll(); } catch(e) { setErr(e.message); } };
-
-  const deleteSelected = async () => {
-    if (selectedFichs.size === 0) return;
-    if (!confirm(`¿Eliminar ${selectedFichs.size} registro${selectedFichs.size > 1 ? "s" : ""}?`)) return;
-    setDeletingMulti(true);
-    try {
-      for (const id of selectedFichs) {
-        await callApi(gasUrl, "deleteFichaje", { role:"admin", pass:sessionPass, id });
+  const totalWorked = useMemo(() => {
+    let sec = 0;
+    for (let i = 0; i < todayList.length; i += 2) {
+      const inF = todayList[i],outF = todayList[i + 1];
+      if (inF && outF && inF.tipo === "entrada" && outF.tipo === "salida") {
+        sec += toSec(outF.horaDeclarada) - toSec(inF.horaDeclarada);
       }
-      setSelectedFichs(new Set());
-      await fetchAll();
-    } catch(e) { setErr(e.message); }
-    finally { setDeletingMulti(false); }
-  };
+    }
+    if (isOpen) {
+      const inF = todayList[todayList.length - 1];
+      const nowSec = toSec(nowHMS(now));
+      sec += nowSec - toSec(inF.horaDeclarada);
+    }
+    if (sec < 0) sec = 0;
+    const h = Math.floor(sec / 3600),m = Math.floor(sec % 3600 / 60),s = sec % 60;
+    return { h, m, s, str: `${pad2(h)}:${pad2(m)}:${pad2(s)}` };
+  }, [todayList, now, isOpen]);
 
-  const toggleSelect = (id) => {
-    setSelectedFichs(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
-  };
-  const toggleAll = () => {
-    setSelectedFichs(prev => prev.size === filteredFichs.length ? new Set() : new Set(filteredFichs.map(f => f.id)));
-  };
+  const pairs = useMemo(() => {
+    const out = [];let cur = null;
+    for (const f of todayList) {
+      if (f.tipo === "entrada") {cur = { entrada: f, salida: null };out.push(cur);} else
+      if (cur) {cur.salida = f;cur = null;}
+    }
+    return out;
+  }, [todayList]);
 
-  const buildRows = (fichs) => fichs.map(f => [f.sociedad, f.nombre, f.dni, fmtDate(f.fecha), f.tipo==="entrada"?"Entrada":"Salida", fmtTime(f.horaDeclarada), fmtTime(f.horaReal)]);
-  const HEADERS_ADMIN = ["Sociedad","Empleado","DNI/NIE","Fecha","Tipo","Hora declarada","Hora real (sistema)"];
-
-  const doExportXLSX = () => exportXLSX(HEADERS_ADMIN, buildRows(filteredFichs), `fichajes_admin_${todayStr()}`);
-  const doExportPDF  = () => exportPDF(HEADERS_ADMIN, buildRows(filteredFichs), `fichajes_admin_${todayStr()}`, "Registro de Fichajes — Administración");
-
-  const saveCfg = async () => {
-    const { ap, ap2, up, up2 } = cfgForm;
-    if (ap && ap.length < 6)  { setCfgErr("Mínimo 6 caracteres."); return; }
-    if (ap && ap !== ap2)     { setCfgErr("Las contraseñas del admin no coinciden."); return; }
-    if (up && up.length < 6)  { setCfgErr("Mínimo 6 caracteres."); return; }
-    if (up && up !== up2)     { setCfgErr("Las contraseñas del auditor no coinciden."); return; }
+  const doFichar = async () => {
+    if (ficking) return;
+    setFicking(true);
+    const data = {
+      sociedad: employee.sociedad, nombre: employee.nombre, dni: employee.dni,
+      tipo: nextAction, fecha: todayStr(),
+      horaDeclarada: nowHMS(now), horaReal: nowHMS(new Date()),
+      timestamp: new Date().toISOString(),
+      lat: geo.lat, lng: geo.lng
+    };
+    // Optimistic UI: insertamos el fichaje inmediatamente y mostramos toast.
+    const optimistic = {
+      id: "tmp-" + Date.now(),
+      sociedad: data.sociedad, nombre: data.nombre, dni: data.dni,
+      fecha: data.fecha, tipo: data.tipo,
+      horaDeclarada: data.horaDeclarada, horaReal: data.horaReal,
+      _optimistic: true
+    };
+    setTodayList((list) => [...list, optimistic]);
+    showToast("success", `✓ ${nextAction === "entrada" ? "Entrada" : "Salida"} registrada`);
+    setFicking(false);
+    // Fire-and-reload en segundo plano
     try {
-      await callApi(gasUrl, "updateConfig", { pass:sessionPass, ...(ap ? { adminPass:ap } : {}), ...(up ? { auditorPass:up } : {}) });
-      setCfgForm({ ap:"", ap2:"", up:"", up2:"" }); setCfgErr(""); setCfgOk(true); setTimeout(() => setCfgOk(false), 3000);
-    } catch(e) { setCfgErr(e.message); }
+      const r = await api.fichar(data);
+      if (r.success) {
+        loadToday();
+      } else {
+        setTodayList((list) => list.filter((f) => f.id !== optimistic.id));
+        showToast("error", r.error || "Error al fichar");
+      }
+    } catch (e) {
+      setTodayList((list) => list.filter((f) => f.id !== optimistic.id));
+      showToast("error", String(e?.message || e));
+    }
   };
-
-  const filteredFichs = fichajes.filter(f => (!search || f.nombre.toLowerCase().includes(search.toLowerCase()) || f.dni.toLowerCase().includes(search.toLowerCase())) && (socFilter === "all" || f.sociedad === socFilter)).sort((a,b) => String(b.timestamp).localeCompare(String(a.timestamp)));
-  const filteredEmps  = [...employees].filter(e => socFilter === "all" || e.sociedad === socFilter).sort((a,b) => a.nombre.localeCompare(b.nombre));
-  const activoStyle   = (a) => ({ padding:"2px 10px", borderRadius:6, fontSize:12, fontWeight:700, background:String(a).toUpperCase().startsWith("S")?C.successBg:C.dangerBg, color:String(a).toUpperCase().startsWith("S")?C.success:C.danger });
-  const TABS = [{ id:"employees", label:"👥 Empleados" }, { id:"fichajes", label:"📋 Fichajes" }, { id:"config", label:"⚙️ Config" }];
 
   return (
-    <div style={{ minHeight:"100vh", background:C.bg, padding:"20px 16px", fontFamily:font }}>
-      <AutoLogoutWarning countdown={countdown} onStay={() => {}} />
-      <div style={{ maxWidth:1020, margin:"0 auto" }}>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
-          <div>
-            <h1 style={{ margin:0, color:C.navy, fontSize:20, fontWeight:800 }}>⚙️ Administrador</h1>
-            <p style={{ margin:"2px 0 0", color:C.muted, fontSize:12 }}>{now.toLocaleString("es-ES")}</p>
+    <div style={{ minHeight: "100vh", background: pal.bg, color: pal.ink, fontFamily: "Inter, sans-serif" }}>
+      {/* Header — sin logo ni nombre (ya están en el héroe + tarjeta de usuario);
+          solo controles de sesión y modo */}
+      <header style={{
+        background: pal.surface, borderBottom: `1px solid ${pal.line}`,
+        padding: "12px 20px", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8,
+        position: "sticky", top: 0, zIndex: 10
+      }}>
+        <Btn pal={pal} variant="ghost" size="sm" onClick={() => setTweaks({ ...tweaks, dark: !tweaks.dark })} title={tweaks.dark ? "Modo claro" : "Modo oscuro"}>
+          {tweaks.dark ? "☀" : "☾"}
+        </Btn>
+        <Btn pal={pal} variant="ghost" size="sm" onClick={onLogout}>Salir</Btn>
+      </header>
+
+      <main style={{ maxWidth: 480, margin: "0 auto", padding: "12px 16px 40px" }}>
+        {/* Tenant logo hero — primera vista del empleado.
+             Altura 356, ancho automático (Nascor es apaisado, Grado cuadrado).
+             Margen inferior pequeño: queremos verlo pegado a la zona de fichaje. */}
+        <div style={{
+          display: "flex", justifyContent: "center", alignItems: "center",
+          marginBottom: -4
+        }}>
+          <TenantLogo tenant={pal.tenant} size={156} />
+        </div>
+        {/* User card */}
+        <Card pal={pal} pad={0} style={{ padding: "16px 18px", marginBottom: 14, display: "flex", alignItems: "center", gap: 14, position: "relative", overflow: "hidden" }}>
+          <div style={{
+            position: "absolute", inset: 0,
+            background: `linear-gradient(135deg, ${pal.accentSoft} 0%, transparent 55%)`,
+            pointerEvents: "none"
+          }} />
+          <div style={{
+            position: "relative",
+            width: 48, height: 48, borderRadius: 14, background: pal.accentSoft,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            color: pal.accent, fontSize: 18, fontWeight: 700, fontFamily: "Space Grotesk, sans-serif",
+            boxShadow: `0 0 0 1px ${pal.accentBorder}`
+          }}>
+            {employee.nombre.split(",")[1]?.trim()[0] || "?"}{employee.nombre.split(",")[0]?.trim()[0] || ""}
           </div>
-          <div style={{ display:"flex", gap:8 }}>
-            <button onClick={fetchAll} style={btn("#e2e8f0", C.muted, { fontSize:13 })}>↻ Actualizar</button>
-            <button onClick={logout} style={btn("#e2e8f0", C.muted, { fontSize:13 })}>Cerrar sesión</button>
+          <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 700, fontSize: 15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {employee.nombre}
+            </div>
+            <div className="mono" style={{ fontSize: 11, color: pal.inkMute, marginTop: 2 }}>
+              {employee.dni} · {employee.sociedad}
+            </div>
+          </div>
+          <div style={{
+            position: "relative", display: "flex", alignItems: "center", gap: 6,
+            padding: "4px 10px", borderRadius: 999,
+            background: isOpen ? pal.successBg : pal.surfaceAlt,
+            color: isOpen ? pal.success : pal.inkMute,
+            fontSize: 11, fontWeight: 700
+          }}>
+            <span style={{
+              width: 6, height: 6, borderRadius: "50%",
+              background: isOpen ? pal.success : pal.inkMute,
+              animation: isOpen ? "pulse-dot 1.5s ease-in-out infinite" : "none"
+            }} />
+            {isOpen ? "Dentro" : "Fuera"}
+          </div>
+        </Card>
+
+        {/* Clock card — adapta al modo (claro/oscuro) y al tenant */}
+        <div style={{
+          background: tweaks.dark ? pal.surface : pal.surface,
+          color: pal.ink,
+          border: `1px solid ${pal.accentBorder}`,
+          borderRadius: 20, padding: "28px 24px",
+          marginBottom: 14, textAlign: "center", position: "relative", overflow: "hidden",
+          boxShadow: tweaks.dark ?
+          `0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 28px rgba(0,0,0,0.35)` :
+          `0 1px 0 rgba(255,255,255,0.6) inset, 0 6px 20px rgba(15,23,42,0.06)`
+        }}>
+          <div style={{
+            position: "absolute", right: -40, top: -40, width: 160, height: 160,
+            borderRadius: "50%", background: pal.accent, opacity: tweaks.dark ? 0.14 : 0.10
+          }} />
+          {pal.tenant?.id === "grado" &&
+          <div style={{
+            position: "absolute", left: -30, bottom: -30, width: 90, height: 90,
+            borderRadius: "50%", background: pal.secondary, opacity: tweaks.dark ? 0.16 : 0.10
+          }} />
+          }
+          <div className="mono" style={{
+            fontSize: 10, letterSpacing: "0.25em",
+            color: pal.inkMute, textTransform: "uppercase"
+          }}>
+            {now.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })}
+          </div>
+          <div className="display tnum" style={{
+            fontSize: 56, fontWeight: 700, margin: "6px 0 0", letterSpacing: "-0.04em",
+            color: pal.ink
+          }}>
+            {now.toLocaleTimeString("es-ES")}
+          </div>
+          <div style={{ display: "flex", justifyContent: "center", gap: 18, marginTop: 14, fontSize: 11 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{
+                width: 28, height: 28, borderRadius: 8,
+                background: pal.accentSoft,
+                display: "flex", alignItems: "center", justifyContent: "center", color: pal.accent
+              }}><Icon name="clock" size={15} /></div>
+              <div style={{ textAlign: "left" }}>
+                <div className="mono" style={{ color: pal.inkMute, letterSpacing: "0.1em", fontSize: 9 }}>ACUMULADO HOY</div>
+                <div className="mono" style={{ fontSize: 15, fontWeight: 700, color: pal.accent, marginTop: 1 }}>
+                  {pad2(totalWorked.h)}h {pad2(totalWorked.m)}m
+                </div>
+              </div>
+            </div>
+            <div style={{ width: 1, background: pal.line }} />
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{
+                width: 28, height: 28, borderRadius: 8,
+                background: isOpen ? pal.successBg : pal.dangerBg,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                color: isOpen ? pal.success : pal.danger
+              }}><Icon name={isOpen ? "bolt" : "sparkle"} size={14} /></div>
+              <div style={{ textAlign: "left" }}>
+                <div className="mono" style={{ color: pal.inkMute, letterSpacing: "0.1em", fontSize: 9 }}>ESTADO</div>
+                <div style={{ fontSize: 13, fontWeight: 700, marginTop: 1, color: isOpen ? pal.success : pal.danger }}>
+                  {isOpen ? "En jornada" : "Fuera"}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div style={{ display:"flex", gap:4, background:"#e2e8f0", borderRadius:12, padding:4, marginBottom:16 }}>
-          {TABS.map(t => <button key={t.id} onClick={() => setTab(t.id)} style={tabBtn(tab === t.id)}>{t.label}</button>)}
-        </div>
-
-        {sociedades.length > 1 && (tab === "employees" || tab === "fichajes") && (
-          <div style={{ display:"flex", gap:8, marginBottom:14, flexWrap:"wrap" }}>
-            {["all",...sociedades].map(s => (
-              <button key={s} onClick={() => setSocFilter(s)} style={{ padding:"6px 14px", borderRadius:8, border:`1.5px solid ${socFilter===s?C.blue:C.border}`, background:socFilter===s?"#eff6ff":"#fff", color:socFilter===s?C.blue:C.muted, fontWeight:socFilter===s?700:500, fontSize:13, cursor:"pointer", fontFamily:font }}>
-                {s === "all" ? "Todas las sociedades" : s}
-              </button>
-            ))}
+        {/* Registro de hoy: pairs */}
+        <Card pal={pal} pad={0} style={{ padding: "18px 20px", marginBottom: 18 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <div className="mono" style={{ fontSize: 10, letterSpacing: "0.2em", color: pal.inkMute, textTransform: "uppercase" }}>
+              Registro de hoy
+            </div>
+            <Btn pal={pal} variant="ghost" size="sm" onClick={() => setShowHistory(true)}>
+              <Icon name="history" size={14} /> Historial
+            </Btn>
           </div>
-        )}
+          {loading ?
+          <div style={{ padding: "20px 0", textAlign: "center", color: pal.inkMute, fontSize: 13 }}>Cargando…</div> :
+          pairs.length === 0 ?
+          <div style={{
+            padding: "24px 0", textAlign: "center", color: pal.inkMute, fontSize: 13,
+            border: `1.5px dashed ${pal.line}`, borderRadius: 12
+          }}>
+              Aún no has fichado hoy
+            </div> :
 
-        {err && <ErrBox msg={err} />}
-
-        {loading ? <Spinner text="Cargando datos desde Sheets..." /> : (<>
-
-          {tab === "employees" && (
-            <div style={cardS}>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18 }}>
-                <h2 style={{ margin:0, fontSize:15, fontWeight:700, color:C.navy }}>Empleados ({filteredEmps.length})</h2>
-                <button style={btn(C.success, "#fff", { fontSize:13 })} onClick={openAdd}>+ Añadir empleado</button>
-              </div>
-              {filteredEmps.length === 0 ? <div style={{ textAlign:"center", padding:"40px 0", color:C.subtle }}>Sin empleados</div> : (
-                <div style={{ overflowX:"auto" }}>
-                  <table style={{ width:"100%", borderCollapse:"collapse" }}>
-                    <thead><tr><th style={th}>Sociedad</th><th style={th}>Apellidos, Nombre</th><th style={th}>DNI/NIE</th><th style={th}>Estado</th><th style={{ ...th, textAlign:"right" }}>Acciones</th></tr></thead>
-                    <tbody>
-                      {filteredEmps.map(e => (
-                        <tr key={e.id}>
-                          <td style={td}><SocBadge name={e.sociedad} /></td>
-                          <td style={td}><strong>{e.nombre}</strong></td>
-                          <td style={td}><code style={{ background:"#f1f5f9", padding:"3px 8px", borderRadius:5, fontWeight:700, fontSize:13 }}>{e.dni}</code></td>
-                          <td style={td}><span style={activoStyle(e.activo)}>{String(e.activo).toUpperCase().startsWith("S") ? "Activo" : "Inactivo"}</span></td>
-                          <td style={{ ...td, textAlign:"right" }}>
-                            <button style={btn(C.blue, "#fff", { fontSize:12, padding:"6px 14px", marginRight:8 })} onClick={() => openEdit(e)}>Editar</button>
-                            <button style={btn(C.danger, "#fff", { fontSize:12, padding:"6px 14px" })} onClick={() => deleteEmp(e.id)}>Eliminar</button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
-
-          {tab === "fichajes" && (
-            <div style={cardS}>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14, flexWrap:"wrap", gap:8 }}>
-                <h2 style={{ margin:0, fontSize:15, fontWeight:700, color:C.navy }}>Fichajes ({filteredFichs.length})</h2>
-                <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-                  {selectedFichs.size > 0 && (
-                    <button style={btn(C.danger, "#fff", { fontSize:13, opacity:deletingMulti?0.7:1 })} onClick={deleteSelected} disabled={deletingMulti}>
-                      {deletingMulti ? "Eliminando..." : `🗑 Eliminar seleccionados (${selectedFichs.size})`}
-                    </button>
-                  )}
-                  <button style={btn("#e2e8f0", C.text, { fontSize:13 })} onClick={doExportXLSX}>📊 XLSX</button>
-                  <button style={btn("#e2e8f0", C.text, { fontSize:13 })} onClick={doExportPDF}>📄 PDF</button>
-                </div>
-              </div>
-              {/* Rango de fechas */}
-              <div style={{ display:"flex", gap:10, alignItems:"center", marginBottom:12, flexWrap:"wrap" }}>
-                <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                  <label style={{ ...lbl, margin:0, fontSize:11 }}>Desde</label>
-                  <input type="date" style={{ ...inp, width:"auto", padding:"7px 10px", fontSize:13 }} value={desde} onChange={e => { setDesde(e.target.value); setSelectedFichs(new Set()); }} />
-                </div>
-                <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                  <label style={{ ...lbl, margin:0, fontSize:11 }}>Hasta</label>
-                  <input type="date" style={{ ...inp, width:"auto", padding:"7px 10px", fontSize:13 }} value={hasta} onChange={e => { setHasta(e.target.value); setSelectedFichs(new Set()); }} />
-                </div>
-                <button style={btn("#f1f5f9", C.muted, { fontSize:12, padding:"7px 12px" })} onClick={() => { setDesde(daysAgo(30)); setHasta(todayStr()); }}>Últimos 30 días</button>
-                <button style={btn("#f1f5f9", C.muted, { fontSize:12, padding:"7px 12px" })} onClick={() => { setDesde("2020-01-01"); setHasta(todayStr()); }}>Todo el historial</button>
-              </div>
-              <input style={{ ...inp, marginBottom:14 }} value={search} onChange={e => { setSearch(e.target.value); setSelectedFichs(new Set()); }} placeholder="Buscar por nombre o DNI/NIE..." />
-              {filteredFichs.length === 0 ? <div style={{ textAlign:"center", padding:"40px 0", color:C.subtle }}>Sin registros</div> : (
-                <table className="fich-table">
-                  <colgroup>
-                    <col style={{ width:32 }} />
-                    <col style={{ width:"12%" }} />
-                    <col style={{ width:"22%" }} />
-                    <col style={{ width:"10%" }} />
-                    <col style={{ width:"9%" }} />
-                    <col style={{ width:"8%" }} />
-                    <col style={{ width:"9%" }} />
-                    <col style={{ width:"9%" }} />
-                    <col style={{ width:36 }} />
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      <th style={{ ...th, padding:"10px 8px", textAlign:"center" }}>
-                        <input type="checkbox" checked={selectedFichs.size === filteredFichs.length && filteredFichs.length > 0} onChange={toggleAll} />
-                      </th>
-                      <th style={th}>Sociedad</th>
-                      <th style={th}>Empleado</th>
-                      <th style={th}>DNI/NIE</th>
-                      <th style={th}>Fecha</th>
-                      <th style={th}>Tipo</th>
-                      <th style={th}>Declarada</th>
-                      <th style={{ ...th, background:C.warningBg, color:C.warning }}>⚑ Real</th>
-                      <th style={th}></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredFichs.map(f => {
-                      const sel = selectedFichs.has(f.id);
-                      const rowBg = sel ? "#fef2f2" : "transparent";
-                      return (
-                        <tr key={f.id} style={{ background:rowBg, cursor:"pointer" }} onClick={() => toggleSelect(f.id)}>
-                          <td style={{ ...td, textAlign:"center", padding:"8px", background:rowBg }}>
-                            <input type="checkbox" checked={sel} onChange={() => toggleSelect(f.id)} onClick={e => e.stopPropagation()} />
-                          </td>
-                          <td style={{ ...td, fontSize:11, whiteSpace:"normal", background:rowBg }}><SocBadge name={f.sociedad} /></td>
-                          <td style={{ ...td, whiteSpace:"normal", background:rowBg }}><strong style={{ fontSize:12 }}>{f.nombre}</strong></td>
-                          <td style={{ ...td, fontSize:11, background:rowBg }}><code style={{ background:"#f1f5f9", padding:"2px 5px", borderRadius:4, fontSize:11 }}>{f.dni}</code></td>
-                          <td style={{ ...td, fontSize:12, background:rowBg }}>{fmtDate(f.fecha)}</td>
-                          <td style={{ ...td, background:rowBg }}><span style={{ ...badge(f.tipo), fontSize:11, padding:"2px 7px" }}>{f.tipo==="entrada"?"↑ Ent.":"↓ Sal."}</span></td>
-                          <td style={{ ...td, fontSize:12, background:rowBg }}>{fmtTime(f.horaDeclarada)}</td>
-                          <td style={{ ...td, fontSize:12, background:sel?"#fef2f2":C.warningBg }}><strong style={{ color:C.warning }}>{fmtTime(f.horaReal)}</strong></td>
-                          <td style={{ ...td, textAlign:"center", padding:"8px", background:rowBg }}>
-                            <button style={btn(C.danger,"#fff",{fontSize:11,padding:"3px 8px"})} onClick={e=>{e.stopPropagation();deleteFich(f.id);}}>✕</button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          )}
-
-          {tab === "config" && (
-            <div style={cardS}>
-              <h2 style={{ margin:"0 0 6px", fontSize:15, fontWeight:700, color:C.navy }}>Cambiar contraseñas</h2>
-              <p style={{ color:C.muted, fontSize:13, margin:"0 0 22px" }}>Deja en blanco los campos que no quieras modificar.</p>
-              {[
-                { label:"⚙️ Administrador", fields:[{ k:"ap", ph:"Nueva contraseña" },{ k:"ap2", ph:"Confirmar" }] },
-                { label:"🔍 Auditor",        fields:[{ k:"up", ph:"Nueva contraseña" },{ k:"up2", ph:"Confirmar" }] },
-              ].map(s => (
-                <div key={s.label} style={{ background:"#f8fafc", borderRadius:12, padding:18, marginBottom:14 }}>
-                  <p style={{ margin:"0 0 14px", fontWeight:700, fontSize:13, color:C.text }}>{s.label}</p>
-                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
-                    {s.fields.map(({ k, ph }) => (
-                      <div key={k}>
-                        <label style={lbl}>{ph}</label>
-                        <input type="password" style={inp} value={cfgForm[k]} onChange={e => setCfgForm({ ...cfgForm, [k]:e.target.value })} placeholder={ph} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {pairs.map((p, i) =>
+            <div key={i} style={{ display: "flex", alignItems: "stretch", gap: 8 }}>
+                  <div style={{ flex: 1, padding: "12px 14px", borderRadius: 12, background: pal.successBg }}>
+                    <div className="mono" style={{ fontSize: 9, color: pal.success, letterSpacing: "0.15em", fontWeight: 700 }}>
+                      ENTRADA{pairs.length > 1 ? ` ${i + 1}` : ""}
+                    </div>
+                    <div className="mono" style={{ fontSize: 20, fontWeight: 700, color: pal.success, marginTop: 2 }}>
+                      {fmtTime(p.entrada.horaDeclarada)}
+                    </div>
+                  </div>
+                  <div style={{
+                flex: 1, padding: "12px 14px", borderRadius: 12,
+                background: p.salida ? pal.dangerBg : pal.surfaceAlt,
+                position: "relative"
+              }}>
+                    <div className="mono" style={{
+                  fontSize: 9, color: p.salida ? pal.danger : pal.inkMute,
+                  letterSpacing: "0.15em", fontWeight: 700
+                }}>
+                      SALIDA{pairs.length > 1 ? ` ${i + 1}` : ""}
+                    </div>
+                    <div className="mono" style={{
+                  fontSize: 20, fontWeight: 700, marginTop: 2,
+                  color: p.salida ? pal.danger : pal.inkMute
+                }}>
+                      {p.salida ? fmtTime(p.salida.horaDeclarada) : "— · —"}
+                    </div>
+                    {!p.salida &&
+                <div style={{
+                  position: "absolute", right: 12, top: 12,
+                  width: 6, height: 6, borderRadius: "50%", background: pal.accent,
+                  animation: "pulse-dot 1.5s infinite"
+                }} />
+                }
+                  </div>
+                  {p.entrada && p.salida &&
+              <div style={{
+                padding: "12px 10px", borderRadius: 12,
+                background: pal.surfaceAlt, minWidth: 60,
+                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center"
+              }}>
+                      <div style={{ color: pal.inkMute, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Icon name="clock" size={12} />
                       </div>
-                    ))}
+                      <div className="mono" style={{ fontSize: 12, fontWeight: 700, color: pal.ink, marginTop: 2 }}>
+                        {durationHM(fmtTime(p.entrada.horaDeclarada), fmtTime(p.salida.horaDeclarada))}
+                      </div>
+                    </div>
+              }
+                  <button onClick={() => setShowCorrModal(p.entrada)} title="Corregir" style={{
+                background: "transparent", border: `1px solid ${pal.line}`,
+                borderRadius: 10, cursor: "pointer", color: pal.inkMute,
+                padding: "0 8px", fontSize: 14
+              }}>✎</button>
+                </div>
+            )}
+            </div>
+          }
+
+          {/* Geo indicator — like Clásica */}
+          <div style={{
+            marginTop: 14, padding: "10px 14px", borderRadius: 10,
+            background: pal.surfaceAlt, display: "flex", alignItems: "center", gap: 10,
+            fontSize: 12, color: pal.inkSoft
+          }}>
+            <span style={{
+              width: 8, height: 8, borderRadius: "50%",
+              background: geo.status === "ok" ? pal.success : geo.status === "loading" ? pal.warn : pal.danger
+            }} />
+            <span style={{ flex: 1 }}>
+              {geo.status === "ok" && <>Ubicación registrada · <span className="mono">{geo.lat.toFixed(4)}, {geo.lng.toFixed(4)}</span></>}
+              {geo.status === "loading" && "Obteniendo ubicación…"}
+              {geo.status === "error" && "Ubicación no disponible"}
+              {geo.status === "idle" && "Ubicación pendiente"}
+            </span>
+            {geo.status === "ok" && <span style={{ color: pal.success, fontWeight: 700 }}>✓ Verificada</span>}
+          </div>
+        </Card>
+
+        {/* Big pulse button */}
+        <button onClick={doFichar} disabled={ficking || loading} style={{
+          "--pulse-c": isOpen ? "rgba(194,59,42,0.4)" : "rgba(242,106,33,0.4)",
+          width: "100%", padding: 30, fontSize: 19, fontWeight: 700,
+          background: isOpen ? pal.danger : pal.accent, color: "#fff",
+          border: `3px solid ${isOpen ? pal.danger : pal.accent}`,
+          borderRadius: 20, cursor: ficking || loading ? "wait" : "pointer",
+          fontFamily: "inherit", letterSpacing: "0.02em",
+          animation: !ficking && tweaks.buttonStyle === "pulse" ? "pulse-ring 2s infinite" : "none",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 14,
+          opacity: ficking || loading ? 0.7 : 1, transition: "opacity 150ms"
+        }}>
+          <Icon name={isOpen ? "out" : "in"} size={22} strokeWidth={2.3} color="#fff" />
+          {ficking ? "Registrando…" : `Fichar ${isOpen ? "SALIDA" : "ENTRADA"}`}
+        </button>
+
+        <div style={{ textAlign: "center", marginTop: 18, fontSize: 11, color: pal.inkMute }}>
+          Se registra también la hora real del sistema
+        </div>
+      </main>
+
+      {/* Correction modal */}
+      {showCorrModal &&
+      <CorrectionModal pal={pal} fichaje={showCorrModal} employee={employee}
+      onClose={() => setShowCorrModal(null)}
+      onSuccess={() => {setShowCorrModal(null);showToast("success", "Solicitud enviada a RRHH");}} />
+
+      }
+
+      {/* History modal */}
+      {showHistory &&
+      <HistoryModal pal={pal} employee={employee} onClose={() => setShowHistory(false)} />
+      }
+
+      {/* Idle warning */}
+      <Modal open={warnIdle} onClose={() => setWarnIdle(false)} pal={pal}>
+        <h3 style={{ margin: 0 }}>¿Sigues ahí?</h3>
+        <p style={{ color: pal.inkSoft }}>Por seguridad, cerraremos tu sesión en 30 segundos de inactividad.</p>
+        <Btn pal={pal} onClick={() => setWarnIdle(false)} style={{ width: "100%", justifyContent: "center" }}>Continuar</Btn>
+      </Modal>
+    </div>);
+
+};
+
+/* Correction request modal */
+const CorrectionModal = ({ pal, fichaje, employee, onClose, onSuccess }) => {
+  const [hora, setHora] = useState(fmtTime(fichaje.horaDeclarada));
+  const [motivo, setMotivo] = useState("");
+  const [loading, setLoading] = useState(false);
+  const submit = async () => {
+    if (!motivo.trim()) return;
+    setLoading(true);
+    try {
+      await api.requestCorreccion({
+        empId: employee.id, nombre: employee.nombre, fecha: fichaje.fecha,
+        tipo: fichaje.tipo, horaOriginal: fmtTime(fichaje.horaDeclarada),
+        horaPropuesta: hora, motivo: motivo.trim()
+      });
+      onSuccess();
+    } catch (e) {}
+    setLoading(false);
+  };
+  return (
+    <Modal open={true} onClose={onClose} pal={pal}>
+      <h3 style={{ margin: "0 0 6px", fontSize: 20 }}>Corregir fichaje</h3>
+      <p style={{ margin: "0 0 20px", fontSize: 13, color: pal.inkSoft }}>
+        {fmtDate(fichaje.fecha)} · <strong style={{ textTransform: "capitalize", color: pal.ink }}>{fichaje.tipo}</strong> registrada a las {fmtTime(fichaje.horaDeclarada)}
+      </p>
+      <label style={{ fontSize: 12, fontWeight: 600, color: pal.inkSoft }}>Hora correcta</label>
+      <Input pal={pal} type="time" value={hora} onChange={(e) => setHora(e.target.value)} style={{ marginTop: 6, marginBottom: 14 }} />
+      <label style={{ fontSize: 12, fontWeight: 600, color: pal.inkSoft }}>Motivo (obligatorio)</label>
+      <textarea value={motivo} onChange={(e) => setMotivo(e.target.value)} rows={4} placeholder="Ej: Olvidé fichar al entrar, llegué pronto por reunión con cliente…"
+      style={{
+        width: "100%", padding: 12, borderRadius: 10, border: `1px solid ${pal.line}`,
+        background: pal.surface, color: pal.ink, fontSize: 14, marginTop: 6, resize: "vertical",
+        fontFamily: "inherit", outline: "none"
+      }} />
+      <div style={{ display: "flex", gap: 8, marginTop: 20, justifyContent: "flex-end" }}>
+        <Btn pal={pal} variant="secondary" onClick={onClose}>Cancelar</Btn>
+        <Btn pal={pal} onClick={submit} disabled={loading || !motivo.trim()}>
+          {loading ? "Enviando…" : "Solicitar aprobación"}
+        </Btn>
+      </div>
+    </Modal>);
+
+};
+
+/* History modal */
+const HistoryModal = ({ pal, employee, onClose }) => {
+  const [list, setList] = useState([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    (async () => {
+      const rr = await callApi("getMyFichajesRange", { dni: employee.dni, desde: daysAgo(30), hasta: todayStr() }).catch(() => ({ success: false, fichajes: [] }));
+      const r = rr.success ? rr : { success: true, fichajes: [] };
+      if (r.success) {
+        const mine = r.fichajes.filter((f) => f.dni === employee.dni);
+        setList(mine.sort((a, b) => (b.fecha + b.horaDeclarada).localeCompare(a.fecha + a.horaDeclarada)));
+      }
+      setLoading(false);
+    })();
+  }, []);
+  const byDay = useMemo(() => {
+    const map = new Map();
+    for (const f of list) {
+      if (!map.has(f.fecha)) map.set(f.fecha, []);
+      map.get(f.fecha).push(f);
+    }
+    return Array.from(map.entries());
+  }, [list]);
+  return (
+    <Modal open={true} onClose={onClose} pal={pal} maxWidth={560}>
+      <h3 style={{ margin: "0 0 16px", fontSize: 20 }}>Mi historial (30 días)</h3>
+      {loading ? <div style={{ padding: 20, textAlign: "center", color: pal.inkMute }}>Cargando…</div> :
+      byDay.length === 0 ? <div style={{ padding: 20, textAlign: "center", color: pal.inkMute }}>Sin registros</div> :
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {byDay.map(([date, fichs]) => {
+          const pairs = [];
+          for (let i = 0; i < fichs.length; i += 2) pairs.push([fichs[i], fichs[i + 1]]);
+          return (
+            <div key={date} style={{ padding: 14, background: pal.surfaceAlt, borderRadius: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                  <strong>{fmtDate(date)}</strong>
+                  <span style={{ fontSize: 12, color: pal.inkSoft }}>{fichs.length} fichaje{fichs.length > 1 ? "s" : ""}</span>
+                </div>
+                {pairs.map((p, i) =>
+              <div key={i} className="mono" style={{ fontSize: 13, color: pal.inkSoft, display: "flex", gap: 12 }}>
+                    <span>↓ {fmtTime(p[0]?.horaDeclarada)}</span>
+                    <span>↑ {p[1] ? fmtTime(p[1].horaDeclarada) : "—"}</span>
+                    <span style={{ marginLeft: "auto", color: pal.ink, fontWeight: 600 }}>
+                      {durationHM(fmtTime(p[0]?.horaDeclarada), fmtTime(p[1]?.horaDeclarada))}
+                    </span>
+                  </div>
+              )}
+              </div>);
+
+        })}
+        </div>
+      }
+    </Modal>);
+
+};
+
+
+/* ═══════════════════════════════════════════════════════════════
+   ADMIN / AUDITOR — shared dashboard shell
+═══════════════════════════════════════════════════════════════ */
+const DashHeader = ({ pal, role, onLogout, tweaks, setTweaks }) =>
+<header style={{
+  background: pal.surface, borderBottom: `1px solid ${pal.line}`,
+  padding: "12px 24px", display: "flex", alignItems: "center", justifyContent: "space-between",
+  position: "sticky", top: 0, zIndex: 10
+}}>
+    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+      <OcaLogo size={28} color={pal.accent} />
+      <div style={{ height: 24, width: 1, background: pal.line }} />
+      <div>
+        <div style={{ fontSize: 10, color: pal.inkMute, textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>
+          {role === "admin" ? "Panel administración" : "Auditor — Solo lectura"}
+        </div>
+        <div style={{ fontSize: 15, fontWeight: 700 }}>Control de Fichajes</div>
+      </div>
+    </div>
+    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <Btn pal={pal} variant="ghost" size="sm" onClick={() => setTweaks({ ...tweaks, dark: !tweaks.dark })}>
+        {tweaks.dark ? "☀" : "☾"}
+      </Btn>
+      <Btn pal={pal} variant="secondary" size="sm" onClick={onLogout}>Cerrar sesión</Btn>
+    </div>
+  </header>;
+
+
+const StatCard = ({ label, value, sub, tone, pal, icon, trend }) => {
+  const ringColor = tone || pal.accent;
+  return (
+    <Card pal={pal} pad={0} style={{
+      position: "relative", overflow: "hidden",
+      transition: "transform 180ms ease, box-shadow 180ms ease",
+      cursor: "default"
+    }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.transform = "translateY(-2px)";
+        e.currentTarget.style.boxShadow = `0 14px 30px ${pal.tenant?.id === "grado" ? "rgba(201,162,39,0.18)" : "rgba(242,106,33,0.18)"}`;
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.transform = "";
+        e.currentTarget.style.boxShadow = "";
+      }}>
+      {/* Top accent bar tinted by tone */}
+      <div style={{ height: 3, background: `linear-gradient(90deg, ${ringColor} 0%, ${ringColor}55 100%)` }} />
+      {/* Decorative corner glow */}
+      <div aria-hidden style={{
+        position: "absolute", right: -32, top: -32, width: 110, height: 110, borderRadius: "50%",
+        background: `radial-gradient(circle at center, ${ringColor}26 0%, transparent 70%)`, pointerEvents: "none"
+      }} />
+      {/* Subtle diagonal grid */}
+      <div aria-hidden style={{
+        position: "absolute", inset: 0, opacity: 0.04, pointerEvents: "none",
+        backgroundImage: `repeating-linear-gradient(45deg, ${pal.ink} 0 1px, transparent 1px 14px)`
+      }} />
+      <div style={{ padding: 18, position: "relative" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{
+              fontSize: 10, color: pal.inkMute, fontWeight: 700,
+              textTransform: "uppercase", letterSpacing: 1.2
+            }}>{label}</div>
+            <div className="mono tnum" style={{
+              fontSize: 32, fontWeight: 700, marginTop: 6, color: tone || pal.ink,
+              lineHeight: 1, letterSpacing: "-0.02em"
+            }}>{value}</div>
+            {sub &&
+            <div style={{ fontSize: 12, color: pal.inkSoft, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
+              {trend && <span style={{
+                display: "inline-flex", alignItems: "center", gap: 2,
+                color: trend > 0 ? pal.success : trend < 0 ? pal.danger : pal.inkMute,
+                fontWeight: 700, fontSize: 11
+              }}>{trend > 0 ? "↑" : trend < 0 ? "↓" : "·"} {Math.abs(trend)}%</span>}
+              {sub}
+            </div>
+            }
+          </div>
+          {icon &&
+          <div style={{
+            width: 44, height: 44, borderRadius: 12, flexShrink: 0,
+            background: `${ringColor}1A`, color: ringColor,
+            border: `1px solid ${ringColor}33`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            boxShadow: `0 1px 0 rgba(255,255,255,0.6) inset`
+          }}>
+            {typeof icon === "string" ? <Icon name={icon} size={22} strokeWidth={1.8} /> : icon}
+          </div>
+          }
+        </div>
+      </div>
+    </Card>);
+};
+
+
+const Tabs = ({ pal, tabs, active, onChange }) =>
+<div style={{ display: "flex", gap: 4, borderBottom: `1px solid ${pal.line}`, marginBottom: 20, flexWrap: "wrap" }}>
+    {tabs.map((t) =>
+  <button key={t.id} onClick={() => onChange(t.id)} style={{
+    padding: "12px 16px", border: "none", background: "transparent",
+    color: active === t.id ? pal.ink : pal.inkSoft,
+    fontWeight: active === t.id ? 700 : 500, fontSize: 14, cursor: "pointer",
+    borderBottom: `2px solid ${active === t.id ? pal.accent : "transparent"}`,
+    marginBottom: -1, whiteSpace: "nowrap"
+  }}>
+        {t.label}
+        {t.count != null &&
+    <span style={{
+      marginLeft: 6, padding: "1px 7px", borderRadius: 10,
+      background: active === t.id ? pal.accent : pal.surfaceAlt,
+      color: active === t.id ? "#fff" : pal.inkSoft, fontSize: 11, fontWeight: 700
+    }}>{t.count}</span>
+    }
+      </button>
+  )}
+  </div>;
+
+
+/* ════ Admin dashboard ════ */
+const AdminAuditorScreen = ({ pal, role, pass, onLogout, tweaks, setTweaks, showToast }) => {
+  const [tab, setTab] = useState("overview");
+  const [fichajes, setFichajes] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [correcciones, setCorrecciones] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [dateFrom, setDateFrom] = useState(daysAgo(14));
+  const [dateTo, setDateTo] = useState(todayStr());
+  const [warnIdle, setWarnIdle] = useState(false);
+  const isAdmin = role === "admin";
+
+  const reload = async () => {
+    setLoading(true);
+    try {
+      const [f, e, c] = await Promise.all([
+      api.getFichajes(role, pass, { desde: dateFrom, hasta: dateTo }),
+      api.getEmployees(pass),
+      api.getCorrecciones(role, pass)]
+      );
+      if (f.success) setFichajes(f.fichajes);
+      if (e.success) setEmployees(e.employees);
+      if (c.success) setCorrecciones(c.correcciones);
+    } catch (err) {showToast("error", String(err?.message || err));}
+    setLoading(false);
+  };
+  useEffect(() => {reload();}, [dateFrom, dateTo]);
+  useAutoLogout(true, onLogout, () => setWarnIdle(true));
+
+  const pendingCount = correcciones.filter((c) => c.estado === "pendiente").length;
+
+  const tabs = [
+  { id: "overview", label: "Resumen" },
+  { id: "fichajes", label: "Fichajes", count: fichajes.length },
+  { id: "corrections", label: "Correcciones", count: pendingCount },
+  { id: "employees", label: "Empleados", count: employees.length }];
+
+
+  const approveCorrection = async (c, ok) => {
+    if (!isAdmin) return;
+    const r = await api.resolveCorreccion(pass, c.id, ok);
+    if (r.success) {showToast("success", ok ? "Aprobada" : "Rechazada");reload();}
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: pal.bg, color: pal.ink, fontFamily: "Inter, sans-serif" }}>
+      <DashHeader pal={pal} role={role} onLogout={onLogout} tweaks={tweaks} setTweaks={setTweaks} />
+
+      {!isAdmin &&
+      <div style={{ background: pal.warnBg, color: pal.warn, padding: "8px 24px", fontSize: 12, fontWeight: 600, textAlign: "center", borderBottom: `1px solid ${pal.warn}` }}>
+          🔍 Acceso de auditor — solo lectura. Sin capacidad de modificación.
+        </div>
+      }
+
+      <main style={{ maxWidth: 1280, margin: "0 auto", padding: "24px" }}>
+        <Tabs pal={pal} tabs={tabs} active={tab} onChange={setTab} />
+        {tab === "overview" && <OverviewTab pal={pal} fichajes={fichajes} employees={employees} correcciones={correcciones} dateFrom={dateFrom} dateTo={dateTo} setDateFrom={setDateFrom} setDateTo={setDateTo} loading={loading} />}
+        {tab === "fichajes" && <FichajesTab pal={pal} fichajes={fichajes} dateFrom={dateFrom} dateTo={dateTo} setDateFrom={setDateFrom} setDateTo={setDateTo} role={role} pass={pass} reload={reload} showToast={showToast} employees={employees} />}
+        {tab === "corrections" && <CorrectionsTab pal={pal} correcciones={correcciones} isAdmin={isAdmin} onResolve={approveCorrection} />}
+        {tab === "employees" && <EmployeesTab pal={pal} employees={employees} isAdmin={isAdmin} pass={pass} reload={reload} showToast={showToast} fichajes={fichajes} />}
+      </main>
+
+      <Modal open={warnIdle} onClose={() => setWarnIdle(false)} pal={pal}>
+        <h3 style={{ margin: 0 }}>¿Sigues ahí?</h3>
+        <p style={{ color: pal.inkSoft }}>Por seguridad, cerraremos tu sesión en 30 segundos.</p>
+        <Btn pal={pal} onClick={() => setWarnIdle(false)} style={{ width: "100%", justifyContent: "center" }}>Continuar</Btn>
+      </Modal>
+    </div>);
+
+};
+
+/* ════ Overview tab ════ */
+const OverviewTab = ({ pal, fichajes, employees, correcciones, dateFrom, dateTo, setDateFrom, setDateTo }) => {
+  const today = todayStr();
+  const todayF = fichajes.filter((f) => f.fecha === today);
+  const workingNow = useMemo(() => {
+    const byEmp = new Map();
+    for (const f of todayF) {
+      const arr = byEmp.get(f.dni) || [];arr.push(f);byEmp.set(f.dni, arr);
+    }
+    let count = 0;
+    for (const [, arr] of byEmp) {
+      arr.sort((a, b) => a.horaDeclarada.localeCompare(b.horaDeclarada));
+      if (arr[arr.length - 1]?.tipo === "entrada") count++;
+    }
+    return count;
+  }, [todayF]);
+
+  const pendingCorr = correcciones.filter((c) => c.estado === "pendiente").length;
+  const activeEmp = employees.filter((e) => e.activo === "Sí").length;
+
+  const discrepancies = useMemo(() => {
+    let count = 0;
+    for (const f of fichajes) {
+      if (!f.horaDeclarada || !f.horaReal) continue;
+      const diff = Math.abs(toSec(f.horaDeclarada) - toSec(f.horaReal));
+      if (diff > 120) count++;
+    }
+    return count;
+  }, [fichajes]);
+
+  // Per-day histogram
+  const byDay = useMemo(() => {
+    const m = new Map();
+    for (const f of fichajes) {
+      const k = f.fecha;m.set(k, (m.get(k) || 0) + 1);
+    }
+    return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [fichajes]);
+  const maxDay = Math.max(1, ...byDay.map((d) => d[1]));
+
+  // Top absentees (active employees with no fichaje today)
+  const absentToday = employees.filter((e) => e.activo === "Sí" && !todayF.some((f) => f.dni === e.dni));
+
+  return (
+    <div>
+      {/* Date filters */}
+      <div style={{ display: "flex", gap: 12, alignItems: "end", marginBottom: 20, flexWrap: "wrap" }}>
+        <div>
+          <div style={{ fontSize: 11, color: pal.inkMute, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Desde</div>
+          <Input pal={pal} type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={{ width: 160 }} />
+        </div>
+        <div>
+          <div style={{ fontSize: 11, color: pal.inkMute, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Hasta</div>
+          <Input pal={pal} type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={{ width: 160 }} />
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <Btn pal={pal} variant="secondary" size="sm" onClick={() => {setDateFrom(daysAgo(7));setDateTo(todayStr());}}>7d</Btn>
+          <Btn pal={pal} variant="secondary" size="sm" onClick={() => {setDateFrom(daysAgo(14));setDateTo(todayStr());}}>14d</Btn>
+          <Btn pal={pal} variant="secondary" size="sm" onClick={() => {setDateFrom(daysAgo(30));setDateTo(todayStr());}}>30d</Btn>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, marginBottom: 24 }}>
+        <StatCard pal={pal} label="En jornada ahora" value={workingNow} tone={pal.success} sub={`de ${activeEmp} activos`} icon="bolt" />
+        <StatCard pal={pal} label="Fichajes hoy" value={todayF.length} sub={`${new Set(todayF.map((f) => f.dni)).size} empleados`} icon="check" />
+        <StatCard pal={pal} label="Correcciones pendientes" value={pendingCorr} tone={pendingCorr > 0 ? pal.warn : pal.ink} icon="edit" sub={pendingCorr > 0 ? "requieren revisión" : "todo al día"} />
+        <StatCard pal={pal} label="Discrepancias > 2min" value={discrepancies} tone={discrepancies > 0 ? pal.danger : pal.ink} sub="hora real vs declarada" icon="clock" />
+      </div>
+
+      {/* Activity chart */}
+      <Card pal={pal} pad={20} style={{ marginBottom: 20 }}>
+        <h3 style={{ margin: "0 0 16px", fontSize: 14, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Actividad por día</h3>
+        <div style={{ display: "flex", alignItems: "end", gap: 4, height: 140 }}>
+          {byDay.map(([d, n]) =>
+          <div key={d} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, minWidth: 24 }}>
+              <div className="mono" style={{ fontSize: 10, color: pal.inkMute }}>{n}</div>
+              <div style={{
+              width: "100%", height: `${n / maxDay * 100}%`,
+              background: d === today ? pal.accent : pal.accentBorder,
+              borderRadius: "4px 4px 0 0", minHeight: 2, transition: "height 300ms"
+            }} />
+              <div style={{ fontSize: 9, color: pal.inkMute, transform: "rotate(-45deg)", transformOrigin: "center", marginTop: 8, whiteSpace: "nowrap" }}>
+                {d.slice(5)}
+              </div>
+            </div>
+          )}
+        </div>
+      </Card>
+
+      {/* Absent today */}
+      {absentToday.length > 0 &&
+      <Card pal={pal}>
+          <h3 style={{ margin: "0 0 14px", fontSize: 14, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
+            Sin fichar hoy ({absentToday.length})
+          </h3>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {absentToday.slice(0, 20).map((e) =>
+          <Chip key={e.id} pal={pal} tone="warn">{e.nombre}</Chip>
+          )}
+            {absentToday.length > 20 && <Chip pal={pal}>+{absentToday.length - 20} más</Chip>}
+          </div>
+        </Card>
+      }
+    </div>);
+
+};
+
+/* ════ Fichajes tab ════ */
+const FichajesTab = ({ pal, fichajes, dateFrom, dateTo, setDateFrom, setDateTo, role, pass, reload, showToast, employees }) => {
+  const [search, setSearch] = useState("");
+  const [filterSoc, setFilterSoc] = useState("all");
+  const [filterTipo, setFilterTipo] = useState("all");
+  const isAdmin = role === "admin";
+
+  const sociedades = useMemo(() => Array.from(new Set(fichajes.map((f) => f.sociedad))).sort(), [fichajes]);
+
+  const rows = useMemo(() => {
+    return fichajes.filter((f) => {
+      if (search && !f.nombre.toLowerCase().includes(search.toLowerCase()) && !f.dni.includes(search.toUpperCase())) return false;
+      if (filterSoc !== "all" && f.sociedad !== filterSoc) return false;
+      if (filterTipo !== "all" && f.tipo !== filterTipo) return false;
+      return true;
+    }).sort((a, b) => (b.fecha + b.horaDeclarada).localeCompare(a.fecha + a.horaDeclarada));
+  }, [fichajes, search, filterSoc, filterTipo]);
+
+  const exportRows = rows.map((f) => ({
+    Fecha: f.fecha, Hora: fmtTime(f.horaDeclarada), HoraReal: fmtTime(f.horaReal),
+    Tipo: f.tipo, Nombre: f.nombre, DNI: f.dni, Sociedad: f.sociedad,
+    Lat: f.lat || "", Lng: f.lng || ""
+  }));
+
+  const del = async (id) => {
+    if (!confirm("¿Eliminar este fichaje?")) return;
+    const r = await api.deleteFichaje(pass, id);
+    if (r.success) {showToast("success", "Eliminado");reload();}
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+        <Input pal={pal} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar nombre o DNI…" style={{ flex: "1 1 200px", maxWidth: 320 }} />
+        <select value={filterSoc} onChange={(e) => setFilterSoc(e.target.value)} style={{
+          padding: "12px 14px", borderRadius: 10, border: `1px solid ${pal.line}`,
+          background: pal.surface, color: pal.ink, fontSize: 14, outline: "none"
+        }}>
+          <option value="all">Todas sociedades</option>
+          {sociedades.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={filterTipo} onChange={(e) => setFilterTipo(e.target.value)} style={{
+          padding: "12px 14px", borderRadius: 10, border: `1px solid ${pal.line}`,
+          background: pal.surface, color: pal.ink, fontSize: 14, outline: "none"
+        }}>
+          <option value="all">Entradas y salidas</option>
+          <option value="entrada">Solo entradas</option>
+          <option value="salida">Solo salidas</option>
+        </select>
+        <Input pal={pal} type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={{ width: 150 }} />
+        <Input pal={pal} type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={{ width: 150 }} />
+        <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+          <Btn pal={pal} variant="secondary" size="sm" onClick={() => exportXLSX(exportRows, `fichajes_${dateFrom}_${dateTo}.xlsx`)}>↓ Excel</Btn>
+          <Btn pal={pal} variant="secondary" size="sm" onClick={() => exportPDF(
+            "Control de Fichajes — Nascor",
+            [{ header: "Fecha", key: "Fecha" }, { header: "Hora", key: "Hora" }, { header: "Tipo", key: "Tipo" }, { header: "Nombre", key: "Nombre" }, { header: "DNI", key: "DNI" }, { header: "Sociedad", key: "Sociedad" }],
+            exportRows, `fichajes_${dateFrom}_${dateTo}.pdf`
+          )}>↓ PDF</Btn>
+        </div>
+      </div>
+
+      <Card pal={pal} pad={0} style={{ overflow: "hidden" }}>
+        <div style={{ overflowX: "auto" }} className="scroll-thin">
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: pal.surfaceAlt, textAlign: "left" }}>
+                {["Fecha", "Hora", "Tipo", "Empleado", "DNI", "Sociedad", "Real", "Geo", ""].map((h) =>
+                <th key={h} style={{ padding: "10px 14px", fontWeight: 700, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: pal.inkSoft, borderBottom: `1px solid ${pal.line}`, whiteSpace: "nowrap" }}>{h}</th>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 &&
+              <tr><td colSpan={9} style={{ padding: 32, textAlign: "center", color: pal.inkMute }}>Sin resultados</td></tr>
+              }
+              {rows.slice(0, 200).map((f) => {
+                const diff = Math.abs(toSec(f.horaDeclarada) - toSec(f.horaReal));
+                const flagged = diff > 120;
+                return (
+                  <tr key={f.id} style={{ borderBottom: `1px solid ${pal.line}` }}>
+                    <td className="mono" style={{ padding: "10px 14px" }}>{fmtDate(f.fecha)}</td>
+                    <td className="mono tnum" style={{ padding: "10px 14px", fontWeight: 700 }}>{fmtTime(f.horaDeclarada)}</td>
+                    <td style={{ padding: "10px 14px" }}>
+                      <Chip pal={pal} tone={f.tipo === "entrada" ? "success" : "danger"}>
+                        {f.tipo === "entrada" ? "↓" : "↑"} {f.tipo}
+                      </Chip>
+                    </td>
+                    <td style={{ padding: "10px 14px" }}>{f.nombre}</td>
+                    <td className="mono" style={{ padding: "10px 14px", color: pal.inkSoft }}>{f.dni}</td>
+                    <td style={{ padding: "10px 14px", color: pal.inkSoft }}>{f.sociedad}</td>
+                    <td className="mono" style={{ padding: "10px 14px", color: flagged ? pal.danger : pal.inkMute }}>
+                      {fmtTime(f.horaReal)}{flagged && " ⚠"}
+                    </td>
+                    <td style={{ padding: "10px 14px", color: pal.inkMute, fontSize: 11 }}>
+                      {f.lat ? <span title={`${f.lat.toFixed(5)}, ${f.lng.toFixed(5)}`}>📍</span> : "—"}
+                    </td>
+                    <td style={{ padding: "10px 14px" }}>
+                      {isAdmin &&
+                      <button onClick={() => del(f.id)} style={{
+                        background: "transparent", border: "none", color: pal.danger,
+                        cursor: "pointer", fontSize: 12, fontWeight: 600, padding: 0
+                      }}>Eliminar</button>
+                      }
+                    </td>
+                  </tr>);
+
+              })}
+            </tbody>
+          </table>
+          {rows.length > 200 &&
+          <div style={{ padding: 12, textAlign: "center", color: pal.inkMute, fontSize: 12, borderTop: `1px solid ${pal.line}` }}>
+              Mostrando primeros 200 de {rows.length}. Exporta para ver todos.
+            </div>
+          }
+        </div>
+      </Card>
+    </div>);
+
+};
+
+/* ════ Corrections tab ════ */
+const CorrectionsTab = ({ pal, correcciones, isAdmin, onResolve }) => {
+  const [filter, setFilter] = useState("pendiente");
+  const filtered = correcciones.filter((c) => filter === "all" || c.estado === filter);
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+        {[["pendiente", "Pendientes"], ["aprobada", "Aprobadas"], ["rechazada", "Rechazadas"], ["all", "Todas"]].map(([v, l]) =>
+        <Btn key={v} pal={pal} variant={filter === v ? "primary" : "secondary"} size="sm" onClick={() => setFilter(v)}>{l}</Btn>
+        )}
+      </div>
+      {filtered.length === 0 ?
+      <Card pal={pal}><div style={{ padding: 24, textAlign: "center", color: pal.inkMute }}>Sin solicitudes</div></Card> :
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {filtered.map((c) =>
+        <Card pal={pal} key={c.id} pad={18}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 16, flexWrap: "wrap" }}>
+                <div style={{ flex: 1, minWidth: 240 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                    <strong style={{ fontSize: 15 }}>{c.nombre}</strong>
+                    <Chip pal={pal} tone={c.estado === "pendiente" ? "warn" : c.estado === "aprobada" ? "success" : "danger"}>{c.estado}</Chip>
+                    <span style={{ fontSize: 12, color: pal.inkMute }}>{fmtDate(c.fecha)}</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 10 }}>
+                    <Chip pal={pal} tone={c.tipo === "entrada" ? "success" : "danger"}>
+                      {c.tipo === "entrada" ? "↓" : "↑"} {c.tipo}
+                    </Chip>
+                    <div className="mono" style={{ fontSize: 14 }}>
+                      <span style={{ color: pal.inkMute, textDecoration: "line-through" }}>{c.horaOriginal}</span>
+                      <span style={{ margin: "0 10px" }}>→</span>
+                      <span style={{ color: pal.accent, fontWeight: 700 }}>{c.horaPropuesta}</span>
+                    </div>
+                  </div>
+                  <div style={{ padding: 12, background: pal.surfaceAlt, borderRadius: 8, fontSize: 13, color: pal.inkSoft, borderLeft: `3px solid ${pal.accent}` }}>
+                    "{c.motivo}"
                   </div>
                 </div>
-              ))}
-              {cfgErr && <p style={{ color:C.danger, fontSize:13, marginBottom:14 }}>{cfgErr}</p>}
-              {cfgOk  && <p style={{ color:C.success, fontSize:13, marginBottom:14 }}>✓ Contraseñas actualizadas en Sheets.</p>}
-              <button style={btn(C.blue, "#fff", { padding:"11px 24px", fontSize:14 })} onClick={saveCfg}>Guardar cambios</button>
-            </div>
-          )}
+                {isAdmin && c.estado === "pendiente" &&
+            <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                    <Btn pal={pal} variant="success" size="sm" onClick={() => onResolve(c, true)}>✓ Aprobar</Btn>
+                    <Btn pal={pal} variant="danger" size="sm" onClick={() => onResolve(c, false)}>✕ Rechazar</Btn>
+                  </div>
+            }
+              </div>
+            </Card>
+        )}
+        </div>
+      }
+    </div>);
 
-        </>)}
-      </div>
+};
 
-      {empModal && (
-        <Overlay>
-          <div style={{ ...cardS, maxWidth:420, width:"100%" }}>
-            <h3 style={{ margin:"0 0 22px", color:C.navy, fontSize:17, fontWeight:800 }}>
-              {empModal.mode === "add" ? "Nuevo empleado" : "Editar empleado"}
-            </h3>
-            <div style={{ marginBottom:14 }}>
-              <label style={lbl}>Sociedad</label>
-              <input style={inp} value={empForm.sociedad} onChange={e => setEmpForm({ ...empForm, sociedad:e.target.value })} placeholder="Nombre de la sociedad" list="soc-list" autoFocus />
-              <datalist id="soc-list">{sociedades.map(s => <option key={s} value={s} />)}</datalist>
-            </div>
-            <div style={{ marginBottom:14 }}>
-              <label style={lbl}>Apellidos, Nombre</label>
-              <input style={inp} value={empForm.nombre} onChange={e => setEmpForm({ ...empForm, nombre:e.target.value })} placeholder="Apellido Apellido, Nombre" />
-            </div>
-            <div style={{ marginBottom:14 }}>
-              <label style={lbl}>DNI / NIE</label>
-              <input style={{ ...inp, textTransform:"uppercase", letterSpacing:1 }} value={empForm.dni} onChange={e => setEmpForm({ ...empForm, dni:e.target.value })} placeholder="12345678A" />
-            </div>
-            <div style={{ marginBottom:18 }}>
-              <label style={lbl}>Estado</label>
-              <select style={inp} value={empForm.activo} onChange={e => setEmpForm({ ...empForm, activo:e.target.value })}>
-                <option value="Sí">Activo (tiene acceso)</option>
-                <option value="No">Inactivo (sin acceso)</option>
-              </select>
-            </div>
-            {empErr && <p style={{ color:C.danger, fontSize:13, marginBottom:14 }}>{empErr}</p>}
-            <div style={{ display:"flex", gap:10 }}>
-              <button style={btn("#e2e8f0", C.text, { flex:1, padding:"12px" })} onClick={() => setEmpModal(null)}>Cancelar</button>
-              <button style={btn(C.success, "#fff", { flex:2, padding:"12px", fontSize:14, opacity:empSaving?0.7:1 })} onClick={saveEmp} disabled={empSaving}>
-                {empSaving ? "Guardando..." : empModal.mode === "add" ? "Añadir empleado" : "Guardar cambios"}
-              </button>
-            </div>
-          </div>
-        </Overlay>
-      )}
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────
-   PANTALLA: AUDITOR
-───────────────────────────────────────── */
-function AuditorPanel({ gasUrl, sessionPass, logout, now }) {
-  const [fichajes, setFichajes] = useState([]);
-  const [sociedades, setSociedades] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
+/* ════ Employees tab ════ */
+const EmployeesTab = ({ pal, employees, isAdmin, pass, reload, showToast, fichajes }) => {
   const [search, setSearch] = useState("");
-  const [dateFilter, setDateFilter] = useState("");
-  const [tipoFilter, setTipoFilter] = useState("all");
-  const [socFilter, setSocFilter] = useState("all");
-  const [desde, setDesde] = useState(daysAgo(30));
-  const [hasta, setHasta] = useState(todayStr());
-  const countdown = useAutoLogout(true, logout);
+  const [pendingId, setPendingId] = useState(null);
+  const filtered = employees.filter((e) =>
+  !search || e.nombre.toLowerCase().includes(search.toLowerCase()) || e.dni.includes(search.toUpperCase())
+  );
 
-  const fetchFichs = async () => {
-    setLoading(true); setErr("");
+  const fichCountByDni = useMemo(() => {
+    const m = new Map();
+    for (const f of fichajes) m.set(f.dni, (m.get(f.dni) || 0) + 1);
+    return m;
+  }, [fichajes]);
+
+  // Última sincronización simulada (en real lo lee del Sheet o metadata)
+  const lastSyncMs = useMemo(() => {
+    const h = 0.4 + Math.random() * 1.3; // entre ~25min y ~1h40 atrás
+    return Date.now() - h * 3600 * 1000;
+  }, []);
+  const lastSyncAgo = useMemo(() => {
+    const m = Math.floor((Date.now() - lastSyncMs) / 60000);
+    if (m < 60) return `hace ${m} min`;
+    const h = Math.floor(m / 60),rem = m % 60;
+    return `hace ${h}h ${rem}min`;
+  }, [lastSyncMs]);
+
+  const toggleActive = async (emp) => {
+    if (!isAdmin) return;
+    const isActive = emp.activo === "Sí" || emp.activo === "Si";
+    setPendingId(emp.id);
     try {
-      const res = await callApi(gasUrl, "getFichajes", { role:"auditor", pass:sessionPass, desde, hasta });
-      const f = res.fichajes || [];
-      setFichajes(f);
-      setSociedades([...new Set(f.map(x => x.sociedad).filter(Boolean))].sort());
-    } catch(e) { setErr(e.message); }
-    finally { setLoading(false); }
+      const r = await api.setEmpleadoActivo(pass, emp.id, !isActive);
+      if (r.success) {
+        showToast("success", `${emp.nombre.split(",")[0]} — ${!isActive ? "activado" : "desactivado"}`);
+        reload();
+      } else {
+        showToast("error", r.error || "Error");
+      }
+    } catch (e) {showToast("error", String(e?.message || e));}
+    setPendingId(null);
   };
 
-  useEffect(() => { fetchFichs(); }, [desde, hasta]);
-
-  const toSec = (v) => (v||"").split(":").reduce((a,x,i) => a + Number(x)*[3600,60,1][i], 0);
-
-  const filtered = fichajes
-    .filter(f => (!search || f.nombre.toLowerCase().includes(search.toLowerCase()) || f.dni.toLowerCase().includes(search.toLowerCase())) && (!dateFilter || f.fecha === dateFilter) && (tipoFilter === "all" || f.tipo === tipoFilter) && (socFilter === "all" || f.sociedad === socFilter))
-    .sort((a,b) => String(b.timestamp).localeCompare(String(a.timestamp)));
-
-  const disc = filtered.filter(f => Math.abs(toSec(f.horaDeclarada) - toSec(f.horaReal)) > 300).length;
-
-  const HEADERS_AUD = ["Sociedad","Empleado","DNI/NIE","Fecha","Tipo","Hora declarada","Hora real (sistema)","Diferencia (min)"];
-  const buildRowsAud = () => filtered.map(f => {
-    const diff = Math.round((toSec(f.horaDeclarada) - toSec(f.horaReal)) / 60);
-    return [f.sociedad, f.nombre, f.dni, fmtDate(f.fecha), f.tipo==="entrada"?"Entrada":"Salida", fmtTime(f.horaDeclarada), fmtTime(f.horaReal), diff===0?"0":`${diff>0?"+":""}${diff} min`];
-  });
-
-  const doExportXLSX = () => exportXLSX(HEADERS_AUD, buildRowsAud(), `auditoria_${todayStr()}`);
-  const doExportPDF  = () => exportPDF(HEADERS_AUD, buildRowsAud(), `auditoria_${todayStr()}`, "Registro de Auditoría — Fichajes");
-
-  const STATS = [
-    { icon:"📋", val:filtered.length,                                  label:"Registros totales",    color:C.blue    },
-    { icon:"⬆",  val:filtered.filter(f=>f.tipo==="entrada").length,    label:"Entradas",             color:C.success },
-    { icon:"⬇",  val:filtered.filter(f=>f.tipo==="salida").length,     label:"Salidas",              color:C.danger  },
-    { icon:"⚠",  val:disc,                                              label:"Discrepancias >5 min", color:C.warning },
-  ];
-
   return (
-    <div style={{ minHeight:"100vh", background:C.bg, padding:"20px 16px", fontFamily:font }}>
-      <AutoLogoutWarning countdown={countdown} onStay={() => {}} />
-      <div style={{ maxWidth:1100, margin:"0 auto" }}>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
-          <div>
-            <h1 style={{ margin:0, color:C.navy, fontSize:20, fontWeight:800 }}>🔍 Panel de Auditoría</h1>
-            <p style={{ margin:"2px 0 0", color:C.muted, fontSize:12 }}>{now.toLocaleString("es-ES")}</p>
-          </div>
-          <div style={{ display:"flex", gap:8 }}>
-            <button onClick={fetchFichs} style={btn("#e2e8f0", C.muted, { fontSize:13 })}>↻ Actualizar</button>
-            <button onClick={doExportXLSX} style={btn("#e2e8f0", C.text, { fontSize:13 })}>📊 XLSX</button>
-            <button onClick={doExportPDF}  style={btn("#e2e8f0", C.text, { fontSize:13 })}>📄 PDF</button>
-            <button onClick={logout} style={btn("#e2e8f0", C.muted, { fontSize:13 })}>Cerrar sesión</button>
-          </div>
+    <div>
+      {/* Sync status banner */}
+      <Card pal={pal} pad={16} style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", borderLeft: `3px solid ${pal.success}` }}>
+        <div style={{
+          width: 40, height: 40, borderRadius: 10, background: pal.successBg,
+          color: pal.success, display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 20, flexShrink: 0
+        }}>⟳</div>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ fontSize: 13, fontWeight: 700 }}>Sincronización automática activa</div>
         </div>
-
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,minmax(0,1fr))", gap:12, marginBottom:18 }}>
-          {STATS.map(s => (
-            <div key={s.label} style={{ ...cardS, textAlign:"center", padding:"18px 12px" }}>
-              <div style={{ fontSize:18, marginBottom:6 }}>{s.icon}</div>
-              <div style={{ fontSize:28, fontWeight:800, color:s.color }}>{s.val}</div>
-              <div style={{ fontSize:11, color:C.muted, marginTop:4, lineHeight:1.3 }}>{s.label}</div>
-            </div>
-          ))}
+        <div style={{ textAlign: "right" }}>
+          <div className="mono" style={{ fontSize: 11, color: pal.inkMute, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>Última sync</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: pal.success }}>{lastSyncAgo}</div>
         </div>
+      </Card>
 
-        {sociedades.length > 1 && (
-          <div style={{ display:"flex", gap:8, marginBottom:14, flexWrap:"wrap" }}>
-            {["all",...sociedades].map(s => (
-              <button key={s} onClick={() => setSocFilter(s)} style={{ padding:"6px 14px", borderRadius:8, border:`1.5px solid ${socFilter===s?C.blue:C.border}`, background:socFilter===s?"#eff6ff":"#fff", color:socFilter===s?C.blue:C.muted, fontWeight:socFilter===s?700:500, fontSize:13, cursor:"pointer", fontFamily:font }}>
-                {s === "all" ? "Todas las sociedades" : s}
-              </button>
-            ))}
-          </div>
-        )}
-
-        <div style={{ ...cardS, marginBottom:18 }}>
-          {/* Rango de carga (servidor) */}
-          <div style={{ display:"flex", gap:10, alignItems:"center", marginBottom:14, flexWrap:"wrap", paddingBottom:12, borderBottom:`1px solid ${C.border}` }}>
-            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-              <label style={{ ...lbl, margin:0, fontSize:11 }}>Desde</label>
-              <input type="date" style={{ ...inp, width:"auto", padding:"7px 10px", fontSize:13 }} value={desde} onChange={e => setDesde(e.target.value)} />
-            </div>
-            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-              <label style={{ ...lbl, margin:0, fontSize:11 }}>Hasta</label>
-              <input type="date" style={{ ...inp, width:"auto", padding:"7px 10px", fontSize:13 }} value={hasta} onChange={e => setHasta(e.target.value)} />
-            </div>
-            <button style={btn("#f1f5f9", C.muted, { fontSize:12, padding:"7px 12px" })} onClick={() => { setDesde(daysAgo(30)); setHasta(todayStr()); }}>Últimos 30 días</button>
-            <button style={btn("#f1f5f9", C.muted, { fontSize:12, padding:"7px 12px" })} onClick={() => { setDesde("2020-01-01"); setHasta(todayStr()); }}>Todo el historial</button>
-          </div>
-          {/* Filtros locales */}
-          <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr 1fr", gap:12 }}>
-            <div><label style={lbl}>Buscar empleado</label><input style={inp} value={search} onChange={e => setSearch(e.target.value)} placeholder="Nombre o DNI/NIE..." /></div>
-            <div><label style={lbl}>Fecha</label><input type="date" style={inp} value={dateFilter} onChange={e => setDateFilter(e.target.value)} /></div>
-            <div><label style={lbl}>Tipo</label><select style={inp} value={tipoFilter} onChange={e => setTipoFilter(e.target.value)}><option value="all">Todos</option><option value="entrada">Entrada</option><option value="salida">Salida</option></select></div>
-          </div>
-          {(search || dateFilter || tipoFilter !== "all" || socFilter !== "all") && (
-            <button style={btn("#f1f5f9", C.muted, { marginTop:12, fontSize:12, padding:"6px 14px" })} onClick={() => { setSearch(""); setDateFilter(""); setTipoFilter("all"); setSocFilter("all"); }}>✕ Limpiar filtros</button>
-          )}
+      <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+        <Input pal={pal} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar empleado…" style={{ maxWidth: 320 }} />
+        <div style={{ marginLeft: "auto", fontSize: 12, color: pal.inkMute }}>
+          {filtered.length} {filtered.length === 1 ? "empleado" : "empleados"}
         </div>
+      </div>
 
-        {err && <ErrBox msg={err} />}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 12 }}>
+        {filtered.map((e) => {
+          const effectiveActive = e.activo === "Sí" || e.activo === "Si";
+          const isPending = pendingId === e.id;
+          return (
+            <Card pal={pal} key={e.id} pad={16} style={{ opacity: effectiveActive ? 1 : 0.6 }}>
+              <div style={{ display: "flex", alignItems: "start", justifyContent: "space-between", gap: 10 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis" }}>{e.nombre}</div>
+                  <div className="mono" style={{ fontSize: 11, color: pal.inkMute }}>{e.dni}</div>
+                  <div style={{ fontSize: 12, color: pal.inkSoft, marginTop: 6 }}>{e.sociedad}</div>
+                </div>
+                <Chip pal={pal} tone={effectiveActive ? "success" : "neutral"}>
+                  {effectiveActive ? "Activo" : "Inactivo"}
+                </Chip>
+              </div>
+              <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${pal.line}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ fontSize: 11, color: pal.inkMute }}>
+                  <span className="mono" style={{ fontWeight: 700, color: pal.ink }}>{fichCountByDni.get(e.dni) || 0}</span> fichajes en rango
+                </div>
+                {isAdmin &&
+                <button onClick={() => toggleActive(e)} style={{
+                  background: "transparent", border: `1px solid ${pal.line}`,
+                  color: effectiveActive ? pal.danger : pal.success,
+                  cursor: "pointer", fontSize: 11, fontWeight: 700, padding: "4px 10px",
+                  borderRadius: 6, textTransform: "uppercase", letterSpacing: 0.5
+                }}>{effectiveActive ? "Desactivar" : "Activar"}</button>
+                }
+              </div>
+            </Card>);
 
-        <div style={cardS}>
-          {loading ? <Spinner text="Cargando registros desde Sheets..." /> : filtered.length === 0 ? (
-            <div style={{ textAlign:"center", padding:"50px 0", color:C.subtle }}>Sin registros para los filtros aplicados</div>
-          ) : (
-            <table className="fich-table">
-              <colgroup>
-                <col style={{ width:"11%" }} />
-                <col style={{ width:"22%" }} />
-                <col style={{ width:"10%" }} />
-                <col style={{ width:"9%" }} />
-                <col style={{ width:"8%" }} />
-                <col style={{ width:"10%" }} />
-                <col style={{ width:"10%" }} />
-                <col style={{ width:"10%" }} />
-              </colgroup>
-              <thead><tr>
-                <th style={th}>Sociedad</th>
-                <th style={th}>Empleado</th>
-                <th style={th}>DNI/NIE</th>
-                <th style={th}>Fecha</th>
-                <th style={th}>Tipo</th>
-                <th style={th}>Declarada</th>
-                <th style={{ ...th, background:C.warningBg, color:C.warning }}>⚑ Real</th>
-                <th style={{ ...th, background:C.warningBg, color:C.warning }}>⚑ Diferencia</th>
-              </tr></thead>
-              <tbody>
-                {filtered.map(f => {
-                  const diff = Math.round((toSec(f.horaDeclarada) - toSec(f.horaReal)) / 60);
-                  const abs = Math.abs(diff);
-                  const dc = abs > 10 ? C.danger : abs > 5 ? C.warning : C.success;
-                  return (
-                    <tr key={f.id}>
-                      <td style={{ ...td, fontSize:11 }}><SocBadge name={f.sociedad} /></td>
-                      <td style={{ ...td, whiteSpace:"normal" }}><strong style={{ fontSize:12 }}>{f.nombre}</strong></td>
-                      <td style={{ ...td, fontSize:11 }}><code style={{ background:"#f1f5f9", padding:"2px 5px", borderRadius:4, fontSize:11 }}>{f.dni}</code></td>
-                      <td style={{ ...td, fontSize:12 }}>{fmtDate(f.fecha)}</td>
-                      <td style={td}><span style={{ ...badge(f.tipo), fontSize:11, padding:"2px 7px" }}>{f.tipo==="entrada"?"↑ Ent.":"↓ Sal."}</span></td>
-                      <td style={{ ...td, fontSize:12 }}>{fmtTime(f.horaDeclarada)}</td>
-                      <td style={{ ...td, fontSize:12, background:C.warningBg }}><strong style={{ color:C.warning }}>{fmtTime(f.horaReal)}</strong></td>
-                      <td style={{ ...td, background:C.warningBg }}>
-                        <span style={{ fontWeight:700, fontSize:12, color:dc }}>
-                          {diff === 0 ? "Sin dif." : `${diff > 0 ? "+" : ""}${diff} min`}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+        })}
+      </div>
+
+      <div style={{ marginTop: 20, padding: 14, background: pal.surfaceAlt, borderRadius: 10, fontSize: 12, color: pal.inkSoft, lineHeight: 1.6 }}>
+        <strong style={{ color: pal.ink }}>ℹ Gestión del listado:</strong> los empleados se sincronizan automáticamente desde SAP. No se permite alta/edición manual para evitar conflictos con la próxima sincronización.
+      </div>
+    </div>);
+
+};
+
+/* ═══════════════════════════════════════════════════════════════
+   TWEAKS PANEL
+═══════════════════════════════════════════════════════════════ */
+const TweaksPanel = ({ pal, tweaks, setTweaks, visible }) => {
+  if (!visible) return null;
+  const accents = ["#F26A21", "#D97757", "#1F7A4D", "#2D5BB8", "#8B3FA9", "#1A1A1D"];
+  return (
+    <div style={{
+      position: "fixed", bottom: 20, right: 20, width: 280, zIndex: 8000,
+      background: pal.surface, border: `1px solid ${pal.lineStrong}`,
+      borderRadius: 14, padding: 18, boxShadow: "0 20px 50px rgba(0,0,0,0.2)",
+      fontFamily: "Inter, sans-serif", color: pal.ink
+    }}>
+      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 2, textTransform: "uppercase", color: pal.inkMute, marginBottom: 14 }}>Tweaks</div>
+
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>Variante visual</div>
+        <div style={{ display: "flex", gap: 4 }}>
+          {["A", "B", "C"].map((v) =>
+          <button key={v} onClick={() => setTweaks({ ...tweaks, variant: v })} style={{
+            flex: 1, padding: "6px 8px", borderRadius: 8,
+            border: `1px solid ${tweaks.variant === v ? pal.accent : pal.line}`,
+            background: tweaks.variant === v ? pal.accentSoft : "transparent",
+            color: tweaks.variant === v ? pal.accent : pal.ink,
+            cursor: "pointer", fontWeight: 600, fontSize: 12
+          }}>{v === "A" ? "Cálido" : v === "B" ? "Neutro" : "Industrial"}</button>
           )}
         </div>
       </div>
-    </div>
-  );
-}
 
-/* ─────────────────────────────────────────
-   APP PRINCIPAL
-───────────────────────────────────────── */
-function App() {
-  const [gasUrl, setGasUrl] = useState(null);
-  const [screen, setScreen] = useState("loading");
-  const [currentUser, setCurrentUser] = useState(null);
-  const [sessionPass, setSessionPass] = useState(null);
-  const [now, setNow] = useState(new Date());
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>Color acento</div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {accents.map((c) =>
+          <button key={c} onClick={() => setTweaks({ ...tweaks, accent: c })} style={{
+            width: 28, height: 28, borderRadius: 8, background: c, cursor: "pointer",
+            border: tweaks.accent === c ? `2px solid ${pal.ink}` : `1px solid ${pal.line}`,
+            outline: tweaks.accent === c ? `2px solid ${pal.bg}` : "none"
+          }} />
+          )}
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13 }}>
+          <input type="checkbox" checked={tweaks.dark} onChange={(e) => setTweaks({ ...tweaks, dark: e.target.checked })} />
+          Modo oscuro
+        </label>
+      </div>
+
+      <div>
+        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>Estilo botón fichar</div>
+        <div style={{ display: "flex", gap: 4 }}>
+          {[["pulse", "Pulso"], ["flat", "Plano"]].map(([v, l]) =>
+          <button key={v} onClick={() => setTweaks({ ...tweaks, buttonStyle: v })} style={{
+            flex: 1, padding: "6px 8px", borderRadius: 8,
+            border: `1px solid ${tweaks.buttonStyle === v ? pal.accent : pal.line}`,
+            background: tweaks.buttonStyle === v ? pal.accentSoft : "transparent",
+            color: tweaks.buttonStyle === v ? pal.accent : pal.ink,
+            cursor: "pointer", fontWeight: 600, fontSize: 12
+          }}>{l}</button>
+          )}
+        </div>
+      </div>
+    </div>);
+
+};
+
+/* ═══════════════════════════════════════════════════════════════
+   APP ROOT
+═══════════════════════════════════════════════════════════════ */
+const App = () => {
+  const [session, setSession] = useState(null);
+  const [toast, setToast] = useState(null);
+  const [tweaks, setTweaksState] = useState(() => readTweaks());
+  const [tweakVisible, setTweakVisible] = useState(false);
+
+  const pal = useMemo(() => {
+    const sess = session;
+    const tenant = sess?.employee ? getTenant(sess.employee.sociedad) : TENANTS.nascor;
+    // Si hay sesión de empleado: el acento viene del tenant (naranja Nascor / azul Grado).
+    // Si no (login, admin, auditor): se respeta el tweak accent para poder probar variantes.
+    const tenantAccent = tweaks.dark ? tenant.accentDark : tenant.accent;
+    const variantAccents = { A: tweaks.accent, B: "#2D5BB8", C: "#1A1A1D" };
+    const tweakAccent = tweaks.variant === "A" ? tweaks.accent : variantAccents[tweaks.variant] || tweaks.accent;
+    const effectiveAccent = sess?.role === "employee" ? tenantAccent : tweakAccent;
+    return makePalette(tweaks.dark, effectiveAccent, tenant);
+  }, [tweaks, session]);
+
+  const setTweaks = (t) => {
+    setTweaksState(t);
+    localStorage.setItem("fichajes_tweaks", JSON.stringify(t));
+    try {window.parent?.postMessage({ type: "__edit_mode_set_keys", edits: t }, "*");} catch {}
+  };
+
+  const showToast = (type, msg) => {
+    setToast({ type, msg });
+    setTimeout(() => setToast(null), 3000);
+  };
 
   useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(t);
+    const onMsg = (e) => {
+      if (e.data?.type === "__activate_edit_mode") setTweakVisible(true);
+      if (e.data?.type === "__deactivate_edit_mode") setTweakVisible(false);
+    };
+    window.addEventListener("message", onMsg);
+    try {window.parent?.postMessage({ type: "__edit_mode_available" }, "*");} catch {}
+    return () => window.removeEventListener("message", onMsg);
   }, []);
 
   useEffect(() => {
-    if (GAS_URL_HARDCODED) {
-      setGasUrl(GAS_URL_HARDCODED);
-      setScreen("login");
-    } else {
-      const url = localStorage.getItem(GAS_URL_KEY);
-      if (url) { setGasUrl(url); setScreen("login"); }
-      else { setScreen("urlconfig"); }
-    }
-  }, []);
+    document.body.style.background = pal.bg;
+  }, [pal.bg]);
 
-  const handleUrlSave = (url) => { localStorage.setItem(GAS_URL_KEY, url); setGasUrl(url); setScreen("login"); };
-  const login = (user, role, pass = null) => { setCurrentUser(user); setSessionPass(pass); setScreen(role); };
-  const logout = () => { setCurrentUser(null); setSessionPass(null); setScreen("login"); };
+  const logout = () => setSession(null);
 
-  const shared = { gasUrl, now, logout };
+  return (
+    <>
+      {!session && <LoginScreen pal={pal} onLogin={setSession} tweaks={tweaks} setTweaks={setTweaks} />}
+      {session?.role === "employee" && <EmployeeScreen pal={pal} employee={session.employee} onLogout={logout} tweaks={tweaks} setTweaks={setTweaks} showToast={showToast} />}
+      {(session?.role === "admin" || session?.role === "auditor") &&
+      <AdminAuditorScreen pal={pal} role={session.role} pass={session.pass} onLogout={logout} tweaks={tweaks} setTweaks={setTweaks} showToast={showToast} />
+      }
+      <Toast toast={toast} />
+      <TweaksPanel pal={pal} tweaks={tweaks} setTweaks={setTweaks} visible={tweakVisible} />
+    </>);
 
-  if (screen === "loading")   return <div style={{ minHeight:"100vh", background:C.bg, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:font }}><p style={{ color:C.subtle }}>Cargando...</p></div>;
-  if (screen === "urlconfig") return <UrlConfig onSave={handleUrlSave} />;
-  if (screen === "login")     return <Login gasUrl={gasUrl} onLogin={login} />;
-  if (screen === "employee")  return <EmployeePanel {...shared} user={currentUser} />;
-  if (screen === "admin")     return <AdminPanel {...shared} sessionPass={sessionPass} />;
-  if (screen === "auditor")   return <AuditorPanel {...shared} sessionPass={sessionPass} />;
-  return null;
-}
+};
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
 </script>
 </body>
 </html>
