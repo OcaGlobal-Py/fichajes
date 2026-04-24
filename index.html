@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Control de Fichajes</title>
-<script type="text/javascript" nonce="633d111d435a428d96aaaee9bac" src="//local.adguard.org?ts=1776496342072&amp;type=content-script&amp;dmn=claude.ai&amp;url=https%3A%2F%2Fclaude.ai%2Fdesign%2Fv1%2Fdesign%2Fprojects%2F876e30ab-81de-40d2-998c-9b1c2d34a8a3%2Fdownload%3Fpath%3DControl%2520de%2520Fichajes.html&amp;app=opera.exe&amp;css=2&amp;js=1&amp;rel=1&amp;rji=1&amp;sbe=1"></script><script type="text/javascript" nonce="633d111d435a428d96aaaee9bac" src="//local.adguard.org?ts=1776496342072&amp;name=AdGuard%20Extra&amp;name=AdGuard%20Popup%20Blocker&amp;type=user-script"></script><script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script type="text/javascript" nonce="1320127dc7fa46119f07a5fc00a" src="//local.adguard.org?ts=1777061002508&amp;type=content-script&amp;dmn=claude.ai&amp;url=https%3A%2F%2Fclaude.ai%2Fdesign%2Fv1%2Fdesign%2Fprojects%2F876e30ab-81de-40d2-998c-9b1c2d34a8a3%2Fdownload%3Fpath%3DControl%2520de%2520Fichajes.html&amp;app=opera.exe&amp;css=2&amp;js=1&amp;rel=1&amp;rji=1&amp;sbe=1"></script><script type="text/javascript" nonce="1320127dc7fa46119f07a5fc00a" src="//local.adguard.org?ts=1777061002508&amp;name=AdGuard%20Extra&amp;name=AdGuard%20Popup%20Blocker&amp;type=user-script"></script><script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -49,7 +49,7 @@ const { useState, useEffect, useRef, useMemo } = React;
 /* ═══════════════════════════════════════════════════════════════
    CONFIG
 ═══════════════════════════════════════════════════════════════ */
-const GAS_URL = "https://script.google.com/macros/s/AKfycbzjn_8Oy5AwVoG9JicIvORT0x1nekTckvlfsrAwuYEPIW8bspLNb2c8TZbW7x8H8vS4/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbxDqjO0TiPelsZPP9m55iHYEogzOuSvOUFFKEwxzqceWrwF7NwjBaZ6EIHTmm_Cd-7O/exec";
 const LOGOUT_MS = 3 * 60 * 1000;
 const WARN_MS = 30 * 1000;
 
@@ -58,7 +58,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "dark": false,
   "accent": "#F26A21",
   "buttonStyle": "pulse"
-} /*EDITMODE-END*/;
+}/*EDITMODE-END*/;
 
 /* ═══════════════════════════════════════════════════════════════
    UTILITIES
@@ -92,6 +92,24 @@ const durationHM = (inT, outT) => {
   return `${pad2(Math.floor(d / 60))}h ${pad2(d % 60)}m`;
 };
 const toSec = (v) => (v || "").split(":").reduce((a, x, i) => a + Number(x) * [3600, 60, 1][i], 0);
+
+/** Calcula minutos trabajados a partir de una lista de fichajes del día
+ *  (ordenados por hora). `hypoOut` simula un cierre extra si queda abierta. */
+const minutosTrabajados = (fichs, hypoOut) => {
+  const toMin = (v) => { const s = String(v || "").slice(0,5); const [h,m] = s.split(":").map(Number); return (h||0)*60 + (m||0); };
+  const list = fichs.slice().sort((a,b) => String(a.horaDeclarada).localeCompare(String(b.horaDeclarada)));
+  let total = 0, openIn = null;
+  for (const f of list) {
+    if (f.tipo === "entrada") openIn = toMin(f.horaDeclarada);
+    else if (f.tipo === "salida" && openIn != null) {
+      total += Math.max(0, toMin(f.horaDeclarada) - openIn);
+      openIn = null;
+    }
+  }
+  if (openIn != null && hypoOut != null) total += Math.max(0, toMin(hypoOut) - openIn);
+  return total;
+};
+const LIMITE_DIARIO_MIN = 600; // 10h
 
 const readTweaks = () => {
   try {
@@ -179,7 +197,8 @@ const api = {
   loginRole: (role, pass) => callApi("loginRole", { role, pass }),
   getMyFichajes: (dni, fecha) => callApi("getMyFichajes", { dni, fecha }),
   fichar: (data) => callApi("fichar", data),
-  getEmployees: (pass) => callApi("getEmployees", { role: "admin", pass }),
+  updateFichaje: (dni, id, horaDeclarada) => callApi("updateFichaje", { dni, id, horaDeclarada }),
+  getEmployees: (role, pass) => callApi("getEmployees", { role: role || "admin", pass }),
   getFichajes: (role, pass, opts) => callApi("getFichajes", { role, pass, ...(opts || {}) }),
   getCorrecciones: (role, pass) => callApi("getCorrecciones", { role, pass }),
   requestCorreccion: (data) => callApi("requestCorreccion", data),
@@ -530,7 +549,7 @@ const EmployeeScreen = ({ pal, employee, onLogout, tweaks, setTweaks, showToast 
   const [todayList, setTodayList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [ficking, setFicking] = useState(false);
-  const [showCorrModal, setShowCorrModal] = useState(null);
+  const [showEditModal, setShowEditModal] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
   const [warnIdle, setWarnIdle] = useState(false);
   const geo = useGeo(true);
@@ -578,8 +597,24 @@ const EmployeeScreen = ({ pal, employee, onLogout, tweaks, setTweaks, showToast 
     return out;
   }, [todayList]);
 
+  // Refresco silencioso (sin mostrar "cargando") — usado tras fichar/editar.
+  const reloadSilent = async () => {
+    try {
+      const r = await api.getMyFichajes(employee.dni, todayStr());
+      if (r.success) setTodayList(r.fichajes);
+    } catch (e) { /* silent */ }
+  };
+
   const doFichar = async () => {
     if (ficking) return;
+    // Validación 10h/día
+    const hypoOut = nextAction === "salida" ? nowHMS(now) : null;
+    const simulados = [...todayList, { tipo: nextAction, horaDeclarada: nowHMS(now) }];
+    const mins = minutosTrabajados(simulados, null);
+    if (mins > LIMITE_DIARIO_MIN) {
+      showToast("error", "No se pueden superar las 10 horas trabajadas al día.");
+      return;
+    }
     setFicking(true);
     const data = {
       sociedad: employee.sociedad, nombre: employee.nombre, dni: employee.dni,
@@ -589,8 +624,9 @@ const EmployeeScreen = ({ pal, employee, onLogout, tweaks, setTweaks, showToast 
       lat: geo.lat, lng: geo.lng
     };
     // Optimistic UI: insertamos el fichaje inmediatamente y mostramos toast.
+    const tmpId = "tmp-" + Date.now();
     const optimistic = {
-      id: "tmp-" + Date.now(),
+      id: tmpId,
       sociedad: data.sociedad, nombre: data.nombre, dni: data.dni,
       fecha: data.fecha, tipo: data.tipo,
       horaDeclarada: data.horaDeclarada, horaReal: data.horaReal,
@@ -599,17 +635,20 @@ const EmployeeScreen = ({ pal, employee, onLogout, tweaks, setTweaks, showToast 
     setTodayList((list) => [...list, optimistic]);
     showToast("success", `✓ ${nextAction === "entrada" ? "Entrada" : "Salida"} registrada`);
     setFicking(false);
-    // Fire-and-reload en segundo plano
+    // Confirmación en segundo plano — sustituye el optimista por el real
     try {
       const r = await api.fichar(data);
-      if (r.success) {
-        loadToday();
+      if (r.success && r.id) {
+        // Reemplaza el id temporal por el real, sin recargar la lista entera
+        setTodayList((list) => list.map(f =>
+          f.id === tmpId ? { ...f, id: r.id, _optimistic: false } : f
+        ));
       } else {
-        setTodayList((list) => list.filter((f) => f.id !== optimistic.id));
+        setTodayList((list) => list.filter((f) => f.id !== tmpId));
         showToast("error", r.error || "Error al fichar");
       }
     } catch (e) {
-      setTodayList((list) => list.filter((f) => f.id !== optimistic.id));
+      setTodayList((list) => list.filter((f) => f.id !== tmpId));
       showToast("error", String(e?.message || e));
     }
   };
@@ -767,19 +806,42 @@ const EmployeeScreen = ({ pal, employee, onLogout, tweaks, setTweaks, showToast 
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {pairs.map((p, i) =>
             <div key={i} style={{ display: "flex", alignItems: "stretch", gap: 8 }}>
-                  <div style={{ flex: 1, padding: "12px 14px", borderRadius: 12, background: pal.successBg }}>
+                  <button onClick={() => !p.entrada._optimistic && setShowEditModal(p.entrada)}
+                    disabled={p.entrada._optimistic}
+                    title={p.entrada._optimistic ? "Sincronizando…" : "Editar entrada"}
+                    style={{
+                      flex: 1, padding: "12px 14px", borderRadius: 12, background: pal.successBg,
+                      border: "none", textAlign: "left",
+                      cursor: p.entrada._optimistic ? "default" : "pointer",
+                      opacity: p.entrada._optimistic ? 0.75 : 1,
+                      fontFamily: "inherit",
+                      color: "inherit", position: "relative"
+                    }}>
                     <div className="mono" style={{ fontSize: 9, color: pal.success, letterSpacing: "0.15em", fontWeight: 700 }}>
                       ENTRADA{pairs.length > 1 ? ` ${i + 1}` : ""}
                     </div>
                     <div className="mono" style={{ fontSize: 20, fontWeight: 700, color: pal.success, marginTop: 2 }}>
                       {fmtTime(p.entrada.horaDeclarada)}
                     </div>
-                  </div>
-                  <div style={{
-                flex: 1, padding: "12px 14px", borderRadius: 12,
-                background: p.salida ? pal.dangerBg : pal.surfaceAlt,
-                position: "relative"
-              }}>
+                    <div style={{
+                      position: "absolute", right: 8, top: 8,
+                      color: pal.success, opacity: 0.5, fontSize: 11
+                    }}>✎</div>
+                  </button>
+                  <button onClick={() => p.salida && !p.salida._optimistic && setShowEditModal(p.salida)}
+                    title={!p.salida ? "Aún no has fichado la salida"
+                          : p.salida._optimistic ? "Sincronizando…"
+                          : "Editar salida"}
+                    disabled={!p.salida || p.salida._optimistic}
+                    style={{
+                      flex: 1, padding: "12px 14px", borderRadius: 12,
+                      background: p.salida ? pal.dangerBg : pal.surfaceAlt,
+                      border: "none", textAlign: "left",
+                      cursor: (p.salida && !p.salida._optimistic) ? "pointer" : "default",
+                      opacity: (p.salida && p.salida._optimistic) ? 0.75 : 1,
+                      fontFamily: "inherit",
+                      color: "inherit", position: "relative"
+                    }}>
                     <div className="mono" style={{
                   fontSize: 9, color: p.salida ? pal.danger : pal.inkMute,
                   letterSpacing: "0.15em", fontWeight: 700
@@ -792,6 +854,10 @@ const EmployeeScreen = ({ pal, employee, onLogout, tweaks, setTweaks, showToast 
                 }}>
                       {p.salida ? fmtTime(p.salida.horaDeclarada) : "— · —"}
                     </div>
+                    {p.salida && <div style={{
+                      position: "absolute", right: 8, top: 8,
+                      color: pal.danger, opacity: 0.5, fontSize: 11
+                    }}>✎</div>}
                     {!p.salida &&
                 <div style={{
                   position: "absolute", right: 12, top: 12,
@@ -799,7 +865,7 @@ const EmployeeScreen = ({ pal, employee, onLogout, tweaks, setTweaks, showToast 
                   animation: "pulse-dot 1.5s infinite"
                 }} />
                 }
-                  </div>
+                  </button>
                   {p.entrada && p.salida &&
               <div style={{
                 padding: "12px 10px", borderRadius: 12,
@@ -814,11 +880,6 @@ const EmployeeScreen = ({ pal, employee, onLogout, tweaks, setTweaks, showToast 
                       </div>
                     </div>
               }
-                  <button onClick={() => setShowCorrModal(p.entrada)} title="Corregir" style={{
-                background: "transparent", border: `1px solid ${pal.line}`,
-                borderRadius: 10, cursor: "pointer", color: pal.inkMute,
-                padding: "0 8px", fontSize: 14
-              }}>✎</button>
                 </div>
             )}
             </div>
@@ -865,17 +926,16 @@ const EmployeeScreen = ({ pal, employee, onLogout, tweaks, setTweaks, showToast 
         </div>
       </main>
 
-      {/* Correction modal */}
-      {showCorrModal &&
-      <CorrectionModal pal={pal} fichaje={showCorrModal} employee={employee}
-      onClose={() => setShowCorrModal(null)}
-      onSuccess={() => {setShowCorrModal(null);showToast("success", "Solicitud enviada a RRHH");}} />
-
+      {/* Correction request modal — tanto para hoy como para historial */}
+      {showEditModal &&
+      <CorrectionModal pal={pal} fichaje={showEditModal} employee={employee}
+        onClose={() => setShowEditModal(null)}
+        onSuccess={() => { setShowEditModal(null); showToast("success", "Solicitud enviada a RRHH"); reloadSilent(); }} />
       }
 
       {/* History modal */}
       {showHistory &&
-      <HistoryModal pal={pal} employee={employee} onClose={() => setShowHistory(false)} />
+      <HistoryModal pal={pal} employee={employee} onClose={() => setShowHistory(false)} showToast={showToast} />
       }
 
       {/* Idle warning */}
@@ -888,30 +948,124 @@ const EmployeeScreen = ({ pal, employee, onLogout, tweaks, setTweaks, showToast 
 
 };
 
-/* Correction request modal */
+/* Edit fichaje modal — empleado edita directamente hora declarada de hoy */
+const EditFichajeModal = ({ pal, fichaje, employee, todayList, onClose, onSuccess, onError }) => {
+  const [hora, setHora] = useState(fmtTime(fichaje.horaDeclarada));
+  const [loading, setLoading] = useState(false);
+  const [localErr, setLocalErr] = useState("");
+
+  const submit = async () => {
+    setLocalErr("");
+    if (!hora || !/^\d{2}:\d{2}$/.test(hora)) {
+      setLocalErr("Hora inválida");
+      return;
+    }
+    // Validación 10h en cliente antes de enviar
+    const simulados = todayList.map(f =>
+      f.id === fichaje.id ? { ...f, horaDeclarada: hora + ":00" } : f
+    );
+    const mins = minutosTrabajados(simulados, null);
+    if (mins > LIMITE_DIARIO_MIN) {
+      setLocalErr("Con esa hora se superarían las 10h trabajadas hoy.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const r = await api.updateFichaje(employee.dni, fichaje.id, hora + ":00");
+      if (r.success) {
+        onSuccess(`Hora actualizada a ${hora}`);
+      } else {
+        setLocalErr(r.error || "No se pudo actualizar");
+      }
+    } catch (e) {
+      setLocalErr(String(e?.message || e));
+    }
+    setLoading(false);
+  };
+
+  const tipoLabel = fichaje.tipo === "entrada" ? "entrada" : "salida";
+  const tipoColor = fichaje.tipo === "entrada" ? pal.success : pal.danger;
+
+  return (
+    <Modal open={true} onClose={onClose} pal={pal}>
+      <div style={{
+        display: "inline-flex", alignItems: "center", gap: 8,
+        padding: "4px 10px", borderRadius: 999,
+        background: fichaje.tipo === "entrada" ? pal.successBg : pal.dangerBg,
+        color: tipoColor, fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase",
+        marginBottom: 10
+      }}>
+        {fichaje.tipo === "entrada" ? "↓ Entrada" : "↑ Salida"}
+      </div>
+      <h3 style={{ margin: "0 0 6px", fontSize: 20 }}>Editar hora de {tipoLabel}</h3>
+      <p style={{ margin: "0 0 14px", fontSize: 13, color: pal.inkSoft }}>
+        Registrada a las <strong className="mono" style={{ color: pal.ink }}>{fmtTime(fichaje.horaDeclarada)}</strong>.
+        Ajusta la hora si olvidaste fichar o te equivocaste.
+      </p>
+      <div style={{ marginBottom: 16, padding: "8px 12px", borderRadius: 8, background: pal.successBg, color: pal.success, fontSize: 12, fontWeight: 600 }}>
+        ✓ Edición directa — se aplica de inmediato sin aprobación (solo hoy).
+      </div>
+      <label style={{ fontSize: 12, fontWeight: 600, color: pal.inkSoft }}>Nueva hora</label>
+      <Input pal={pal} type="time" value={hora} onChange={(e) => setHora(e.target.value)}
+        style={{ marginTop: 6, marginBottom: 12, fontSize: 22, fontWeight: 700, textAlign: "center", fontFamily: "'JetBrains Mono', monospace" }} />
+
+      {localErr &&
+        <div style={{
+          padding: "10px 14px", background: pal.dangerBg,
+          color: pal.danger, borderRadius: 8, fontSize: 13, fontWeight: 500, marginBottom: 12
+        }}>{localErr}</div>
+      }
+
+      <div style={{
+        fontSize: 11, color: pal.inkMute, background: pal.surfaceAlt,
+        padding: "10px 12px", borderRadius: 8, marginBottom: 16, lineHeight: 1.5
+      }}>
+        La hora real del sistema queda registrada para auditoría (RD-L 8/2019). Solo puedes editar fichajes de hoy.
+      </div>
+
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <Btn pal={pal} variant="secondary" onClick={onClose}>Cancelar</Btn>
+        <Btn pal={pal} onClick={submit} disabled={loading}>
+          {loading ? "Guardando…" : "Guardar cambio"}
+        </Btn>
+      </div>
+    </Modal>);
+};
+
+/* Correction request modal — used for past days (historial) */
 const CorrectionModal = ({ pal, fichaje, employee, onClose, onSuccess }) => {
   const [hora, setHora] = useState(fmtTime(fichaje.horaDeclarada));
   const [motivo, setMotivo] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const submit = async () => {
     if (!motivo.trim()) return;
     setLoading(true);
     try {
-      await api.requestCorreccion({
+      const r = await api.requestCorreccion({
         empId: employee.id, nombre: employee.nombre, fecha: fichaje.fecha,
         tipo: fichaje.tipo, horaOriginal: fmtTime(fichaje.horaDeclarada),
         horaPropuesta: hora, motivo: motivo.trim()
       });
-      onSuccess();
-    } catch (e) {}
+      if (r && r.success) {
+        onSuccess();
+      } else {
+        setError((r && r.error) || "Error al enviar la solicitud");
+      }
+    } catch (e) {
+      setError(String(e?.message || e));
+    }
     setLoading(false);
   };
   return (
     <Modal open={true} onClose={onClose} pal={pal}>
-      <h3 style={{ margin: "0 0 6px", fontSize: 20 }}>Corregir fichaje</h3>
-      <p style={{ margin: "0 0 20px", fontSize: 13, color: pal.inkSoft }}>
+      <h3 style={{ margin: "0 0 6px", fontSize: 20 }}>Solicitar corrección</h3>
+      <p style={{ margin: "0 0 14px", fontSize: 13, color: pal.inkSoft }}>
         {fmtDate(fichaje.fecha)} · <strong style={{ textTransform: "capitalize", color: pal.ink }}>{fichaje.tipo}</strong> registrada a las {fmtTime(fichaje.horaDeclarada)}
       </p>
+      <div style={{ marginBottom: 16, padding: "8px 12px", borderRadius: 8, background: pal.accentSoft, color: pal.accent, fontSize: 12, fontWeight: 600 }}>
+        ℹ Requiere aprobación de RRHH — quedará pendiente en el panel de administración.
+      </div>
       <label style={{ fontSize: 12, fontWeight: 600, color: pal.inkSoft }}>Hora correcta</label>
       <Input pal={pal} type="time" value={hora} onChange={(e) => setHora(e.target.value)} style={{ marginTop: 6, marginBottom: 14 }} />
       <label style={{ fontSize: 12, fontWeight: 600, color: pal.inkSoft }}>Motivo (obligatorio)</label>
@@ -921,6 +1075,7 @@ const CorrectionModal = ({ pal, fichaje, employee, onClose, onSuccess }) => {
         background: pal.surface, color: pal.ink, fontSize: 14, marginTop: 6, resize: "vertical",
         fontFamily: "inherit", outline: "none"
       }} />
+      {error && <div style={{ marginTop: 10, padding: 10, borderRadius: 8, background: pal.dangerBg, color: pal.danger, fontSize: 13 }}>{error}</div>}
       <div style={{ display: "flex", gap: 8, marginTop: 20, justifyContent: "flex-end" }}>
         <Btn pal={pal} variant="secondary" onClick={onClose}>Cancelar</Btn>
         <Btn pal={pal} onClick={submit} disabled={loading || !motivo.trim()}>
@@ -932,20 +1087,20 @@ const CorrectionModal = ({ pal, fichaje, employee, onClose, onSuccess }) => {
 };
 
 /* History modal */
-const HistoryModal = ({ pal, employee, onClose }) => {
+const HistoryModal = ({ pal, employee, onClose, showToast }) => {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    (async () => {
-      const rr = await callApi("getMyFichajesRange", { dni: employee.dni, desde: daysAgo(30), hasta: todayStr() }).catch(() => ({ success: false, fichajes: [] }));
-      const r = rr.success ? rr : { success: true, fichajes: [] };
-      if (r.success) {
-        const mine = r.fichajes.filter((f) => f.dni === employee.dni);
-        setList(mine.sort((a, b) => (b.fecha + b.horaDeclarada).localeCompare(a.fecha + a.horaDeclarada)));
-      }
-      setLoading(false);
-    })();
-  }, []);
+  const [corrFichaje, setCorrFichaje] = useState(null);
+  const reload = async () => {
+    const rr = await callApi("getMyFichajesRange", { dni: employee.dni, desde: daysAgo(30), hasta: todayStr() }).catch(() => ({ success: false, fichajes: [] }));
+    const r = rr.success ? rr : { success: true, fichajes: [] };
+    if (r.success) {
+      const mine = r.fichajes.filter((f) => f.dni === employee.dni);
+      setList(mine.sort((a, b) => (b.fecha + b.horaDeclarada).localeCompare(a.fecha + a.horaDeclarada)));
+    }
+    setLoading(false);
+  };
+  useEffect(() => { reload(); }, []);
   const byDay = useMemo(() => {
     const map = new Map();
     for (const f of list) {
@@ -969,20 +1124,34 @@ const HistoryModal = ({ pal, employee, onClose }) => {
                   <strong>{fmtDate(date)}</strong>
                   <span style={{ fontSize: 12, color: pal.inkSoft }}>{fichs.length} fichaje{fichs.length > 1 ? "s" : ""}</span>
                 </div>
-                {pairs.map((p, i) =>
-              <div key={i} className="mono" style={{ fontSize: 13, color: pal.inkSoft, display: "flex", gap: 12 }}>
-                    <span>↓ {fmtTime(p[0]?.horaDeclarada)}</span>
-                    <span>↑ {p[1] ? fmtTime(p[1].horaDeclarada) : "—"}</span>
-                    <span style={{ marginLeft: "auto", color: pal.ink, fontWeight: 600 }}>
-                      {durationHM(fmtTime(p[0]?.horaDeclarada), fmtTime(p[1]?.horaDeclarada))}
-                    </span>
-                  </div>
-              )}
+                {pairs.map((p, i) => {
+                  const isToday = date === todayStr();
+                  return (
+                    <div key={i} className="mono" style={{ fontSize: 13, color: pal.inkSoft, display: "flex", gap: 12, alignItems: "center", padding: "4px 0" }}>
+                      <span>↓ {fmtTime(p[0]?.horaDeclarada)}</span>
+                      <span>↑ {p[1] ? fmtTime(p[1].horaDeclarada) : "—"}</span>
+                      <span style={{ marginLeft: "auto", color: pal.ink, fontWeight: 600 }}>
+                        {durationHM(fmtTime(p[0]?.horaDeclarada), fmtTime(p[1]?.horaDeclarada))}
+                      </span>
+                      {!isToday && (
+                        <div style={{ display: "flex", gap: 4 }}>
+                          {p[0] && <button onClick={() => setCorrFichaje(p[0])} title="Solicitar corrección de entrada"
+                            style={{ border: `1px solid ${pal.line}`, background: pal.surface, color: pal.inkSoft, cursor: "pointer", width: 26, height: 26, borderRadius: 6, fontFamily: "inherit", fontSize: 12 }}>✎</button>}
+                          {p[1] && <button onClick={() => setCorrFichaje(p[1])} title="Solicitar corrección de salida"
+                            style={{ border: `1px solid ${pal.line}`, background: pal.surface, color: pal.inkSoft, cursor: "pointer", width: 26, height: 26, borderRadius: 6, fontFamily: "inherit", fontSize: 12 }}>✎</button>}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>);
 
         })}
         </div>
       }
+      {corrFichaje && <CorrectionModal pal={pal} fichaje={corrFichaje} employee={employee}
+        onClose={() => setCorrFichaje(null)}
+        onSuccess={() => { setCorrFichaje(null); if (showToast) showToast("success", "Solicitud enviada a RRHH"); reload(); }} />}
     </Modal>);
 
 };
@@ -1121,14 +1290,19 @@ const AdminAuditorScreen = ({ pal, role, pass, onLogout, tweaks, setTweaks, show
   const reload = async () => {
     setLoading(true);
     try {
-      const [f, e, c] = await Promise.all([
-      api.getFichajes(role, pass, { desde: dateFrom, hasta: dateTo }),
-      api.getEmployees(pass),
-      api.getCorrecciones(role, pass)]
-      );
-      if (f.success) setFichajes(f.fichajes);
-      if (e.success) setEmployees(e.employees);
-      if (c.success) setCorrecciones(c.correcciones);
+      const calls = [
+        api.getFichajes(role, pass, { desde: dateFrom, hasta: dateTo })
+      ];
+      if (isAdmin) {
+        calls.push(api.getEmployees(role, pass));
+        calls.push(api.getCorrecciones(role, pass));
+      }
+      const results = await Promise.all(calls);
+      if (results[0]?.success) setFichajes(results[0].fichajes);
+      if (isAdmin) {
+        if (results[1]?.success) setEmployees(results[1].employees);
+        if (results[2]?.success) setCorrecciones(results[2].correcciones);
+      }
     } catch (err) {showToast("error", String(err?.message || err));}
     setLoading(false);
   };
@@ -1137,17 +1311,33 @@ const AdminAuditorScreen = ({ pal, role, pass, onLogout, tweaks, setTweaks, show
 
   const pendingCount = correcciones.filter((c) => c.estado === "pendiente").length;
 
-  const tabs = [
+  const tabs = isAdmin ? [
   { id: "overview", label: "Resumen" },
   { id: "fichajes", label: "Fichajes", count: fichajes.length },
   { id: "corrections", label: "Correcciones", count: pendingCount },
-  { id: "employees", label: "Empleados", count: employees.length }];
+  { id: "employees", label: "Empleados", count: employees.length }] :
+  [
+  { id: "fichajes", label: "Fichajes", count: fichajes.length }
+  ];
 
+  // Fuerza que el auditor aterrice siempre en la pestaña permitida
+  useEffect(() => {
+    if (!isAdmin && tab !== "fichajes") setTab("fichajes");
+  }, [isAdmin, tab]);
 
   const approveCorrection = async (c, ok) => {
     if (!isAdmin) return;
     const r = await api.resolveCorreccion(pass, c.id, ok);
-    if (r.success) {showToast("success", ok ? "Aprobada" : "Rechazada");reload();}
+    if (r.success) {
+      if (ok && r.warn) {
+        showToast("error", r.warn);
+      } else {
+        showToast("success", ok ? "Corrección aprobada — fichaje actualizado" : "Rechazada");
+      }
+      reload();
+    } else {
+      showToast("error", r.error || "Error");
+    }
   };
 
   return (
@@ -1463,9 +1653,29 @@ const CorrectionsTab = ({ pal, correcciones, isAdmin, onResolve }) => {
 const EmployeesTab = ({ pal, employees, isAdmin, pass, reload, showToast, fichajes }) => {
   const [search, setSearch] = useState("");
   const [pendingId, setPendingId] = useState(null);
-  const filtered = employees.filter((e) =>
-  !search || e.nombre.toLowerCase().includes(search.toLowerCase()) || e.dni.includes(search.toUpperCase())
-  );
+  const [sociedadFilter, setSociedadFilter] = useState("");
+  const [estadoFilter, setEstadoFilter] = useState("activos"); // activos | inactivos | todos
+  const [pageSize, setPageSize] = useState(50);
+
+  const sociedades = useMemo(() => {
+    const set = new Set();
+    for (const e of employees) if (e.sociedad) set.add(e.sociedad);
+    return Array.from(set).sort();
+  }, [employees]);
+
+  const filtered = useMemo(() => employees.filter((e) => {
+    if (search) {
+      const s = search.toLowerCase();
+      if (!(e.nombre?.toLowerCase().includes(s) || String(e.dni||"").includes(search.toUpperCase()))) return false;
+    }
+    if (sociedadFilter && e.sociedad !== sociedadFilter) return false;
+    const isActive = e.activo === "Sí" || e.activo === "Si";
+    if (estadoFilter === "activos" && !isActive) return false;
+    if (estadoFilter === "inactivos" && isActive) return false;
+    return true;
+  }), [employees, search, sociedadFilter, estadoFilter]);
+
+  const visible = filtered.slice(0, pageSize);
 
   const fichCountByDni = useMemo(() => {
     const m = new Map();
@@ -1520,14 +1730,30 @@ const EmployeesTab = ({ pal, employees, isAdmin, pass, reload, showToast, fichaj
       </Card>
 
       <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
-        <Input pal={pal} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar empleado…" style={{ maxWidth: 320 }} />
+        <Input pal={pal} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar empleado…" style={{ maxWidth: 260 }} />
+        <select value={sociedadFilter} onChange={(e) => setSociedadFilter(e.target.value)}
+          style={{ padding: "10px 12px", borderRadius: 10, border: `1px solid ${pal.line}`, background: pal.surface, color: pal.ink, fontFamily: "inherit", fontSize: 14, minWidth: 160 }}>
+          <option value="">Todas las sociedades</option>
+          {sociedades.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <div style={{ display: "flex", borderRadius: 10, overflow: "hidden", border: `1px solid ${pal.line}` }}>
+          {[{k:"activos",l:"Activos"},{k:"inactivos",l:"Inactivos"},{k:"todos",l:"Todos"}].map(opt => (
+            <button key={opt.k} onClick={() => setEstadoFilter(opt.k)}
+              style={{
+                padding: "10px 14px", fontSize: 13, fontWeight: 600, fontFamily: "inherit",
+                border: "none", cursor: "pointer",
+                background: estadoFilter === opt.k ? pal.accent : pal.surface,
+                color: estadoFilter === opt.k ? "#fff" : pal.inkSoft,
+              }}>{opt.l}</button>
+          ))}
+        </div>
         <div style={{ marginLeft: "auto", fontSize: 12, color: pal.inkMute }}>
-          {filtered.length} {filtered.length === 1 ? "empleado" : "empleados"}
+          Mostrando {visible.length} de {filtered.length} ({employees.length} total)
         </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 12 }}>
-        {filtered.map((e) => {
+        {visible.map((e) => {
           const effectiveActive = e.activo === "Sí" || e.activo === "Si";
           const isPending = pendingId === e.id;
           return (
@@ -1559,6 +1785,14 @@ const EmployeesTab = ({ pal, employees, isAdmin, pass, reload, showToast, fichaj
 
         })}
       </div>
+
+      {visible.length < filtered.length && (
+        <div style={{ marginTop: 16, textAlign: "center" }}>
+          <Btn pal={pal} variant="secondary" onClick={() => setPageSize(n => n + 50)}>
+            Mostrar más ({filtered.length - visible.length} restantes)
+          </Btn>
+        </div>
+      )}
 
       <div style={{ marginTop: 20, padding: 14, background: pal.surfaceAlt, borderRadius: 10, fontSize: 12, color: pal.inkSoft, lineHeight: 1.6 }}>
         <strong style={{ color: pal.ink }}>ℹ Gestión del listado:</strong> los empleados se sincronizan automáticamente desde SAP. No se permite alta/edición manual para evitar conflictos con la próxima sincronización.
